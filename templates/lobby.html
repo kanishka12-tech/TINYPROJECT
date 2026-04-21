@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>EmotiCam — Lobby</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;900&display=swap" rel="stylesheet"/>
+<style>
+/* ═══════════════════════════════════════════════ BASE */
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#070b14; --surface:#0d1424; --card:#0f1729;
+  --border:#1e2d45; --accent:#00d4ff; --accent2:#ff3cac;
+  --green:#00ff88; --yellow:#fbbf24; --red:#ef4444;
+  --text:#e2e8f0; --muted:#64748b;
+}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:'Outfit',sans-serif;
+  min-height:100dvh; display:flex; flex-direction:column;
+}
+
+/* ── Ambient orbs ── */
+.orb{
+  position:fixed; border-radius:50%; filter:blur(100px);
+  pointer-events:none; z-index:0; opacity:0.28;
+}
+.orb-1{width:600px;height:600px;background:radial-gradient(circle,rgba(0,212,255,0.22),transparent 70%);top:-200px;left:-200px;}
+.orb-2{width:500px;height:500px;background:radial-gradient(circle,rgba(255,60,172,0.18),transparent 70%);bottom:-150px;right:-150px;}
+.orb-3{width:300px;height:300px;background:radial-gradient(circle,rgba(0,255,136,0.1),transparent 70%);top:40%;right:20%;}
+
+/* ── Topbar ── */
+.topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 24px; border-bottom:1px solid var(--border);
+  background:rgba(7,11,20,0.92); backdrop-filter:blur(16px);
+  position:sticky; top:0; z-index:30;
+}
+.logo-text{font-size:1.1rem;font-weight:900;}
+.logo-text span{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+}
+.user-info{display:flex;align-items:center;gap:10px;}
+.user-avatar{
+  width:34px;height:34px;
+  background:rgba(255,255,255,0.05);
+  border:1px solid var(--border);
+  border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.2rem;
+}
+.user-name{font-size:0.85rem;font-weight:600;}
+.btn-logout{
+  padding:5px 13px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid var(--border);
+  border-radius:8px; color:var(--muted);
+  font-family:'Outfit',sans-serif;
+  font-size:0.75rem; cursor:pointer; transition:all 0.2s;
+}
+.btn-logout:hover{border-color:var(--red);color:#fca5a5;}
+
+/* ── Main layout ── */
+.lobby-main{
+  flex:1; display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  padding:40px 20px; position:relative; z-index:10;
+}
+
+/* ── Hero ── */
+.hero{text-align:center;margin-bottom:48px;}
+.hero-greeting{
+  font-size:0.8rem; color:var(--accent); font-weight:600;
+  letter-spacing:2px; text-transform:uppercase;
+  margin-bottom:10px;
+}
+.hero-title{
+  font-size:2.6rem; font-weight:900; line-height:1.15;
+  letter-spacing:-1px; margin-bottom:12px;
+}
+.hero-title .grad{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+}
+.hero-sub{font-size:0.9rem;color:var(--muted);max-width:380px;margin:0 auto;line-height:1.6;}
+
+/* ── Cards grid ── */
+.actions-grid{
+  display:grid; grid-template-columns:1fr 1fr; gap:16px;
+  width:100%; max-width:600px;
+}
+@media(max-width:520px){
+  .actions-grid{grid-template-columns:1fr;}
+  .hero-title{font-size:2rem;}
+}
+
+/* ── Action card ── */
+.action-card{
+  background:rgba(13,20,36,0.8);
+  border:1px solid var(--border);
+  border-radius:20px; padding:28px 24px;
+  backdrop-filter:blur(16px);
+  transition:border-color 0.3s, box-shadow 0.3s;
+}
+.action-card:hover{
+  border-color:rgba(0,212,255,0.3);
+  box-shadow:0 0 30px rgba(0,212,255,0.07);
+}
+.action-card.join-card:hover{
+  border-color:rgba(255,60,172,0.3);
+  box-shadow:0 0 30px rgba(255,60,172,0.07);
+}
+
+.card-icon{font-size:2.2rem;margin-bottom:14px;display:block;}
+.card-title{font-size:1.1rem;font-weight:700;margin-bottom:6px;}
+.card-desc{font-size:0.78rem;color:var(--muted);line-height:1.5;margin-bottom:20px;}
+
+/* Create button */
+.btn-create{
+  width:100%; padding:13px;
+  background:linear-gradient(135deg,var(--accent),#0099bb);
+  border:none; border-radius:12px;
+  color:#000; font-family:'Outfit',sans-serif;
+  font-size:0.9rem; font-weight:700;
+  cursor:pointer; transition:all 0.2s;
+  letter-spacing:0.3px;
+}
+.btn-create:hover{
+  box-shadow:0 0 22px rgba(0,212,255,0.4);
+  transform:translateY(-1px);
+}
+.btn-create:active{transform:translateY(0);}
+.btn-create:disabled{opacity:0.5;cursor:not-allowed;transform:none;}
+
+/* Join input + button */
+.join-row{display:flex;gap:8px;}
+.code-input{
+  flex:1; padding:12px 14px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid var(--border); border-radius:12px;
+  color:var(--text); font-family:'Outfit',sans-serif;
+  font-size:0.9rem; letter-spacing:3px; font-weight:700;
+  outline:none; text-transform:uppercase;
+  transition:border-color 0.2s, box-shadow 0.2s;
+}
+.code-input:focus{
+  border-color:var(--accent2);
+  box-shadow:0 0 0 3px rgba(255,60,172,0.1);
+}
+.code-input::placeholder{
+  letter-spacing:1px; font-weight:400; text-transform:none;
+}
+.btn-join{
+  padding:12px 18px;
+  background:linear-gradient(135deg,var(--accent2),#cc2090);
+  border:none; border-radius:12px;
+  color:#fff; font-family:'Outfit',sans-serif;
+  font-size:0.9rem; font-weight:700;
+  cursor:pointer; transition:all 0.2s;
+}
+.btn-join:hover{
+  box-shadow:0 0 22px rgba(255,60,172,0.4);
+  transform:translateY(-1px);
+}
+.btn-join:active{transform:translateY(0);}
+.btn-join:disabled{opacity:0.5;cursor:not-allowed;transform:none;}
+
+/* ── Inline error/status messages ── */
+.card-msg{
+  margin-top:10px;font-size:0.78rem;border-radius:8px;
+  padding:7px 11px; display:none;
+}
+.card-msg.error{
+  background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); color:#fca5a5;
+}
+.card-msg.success{
+  background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.25); color:var(--green);
+}
+.card-msg.show{display:block;}
+
+/* ── New room code reveal ── */
+.room-created{
+  margin-top:12px; display:none;
+  background:rgba(0,212,255,0.06);
+  border:1px solid rgba(0,212,255,0.2);
+  border-radius:12px; padding:14px 16px;
+  text-align:center;
+}
+.room-created.show{display:block;}
+.created-label{font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
+.created-code{
+  font-size:2rem;font-weight:900;letter-spacing:8px;
+  color:var(--accent);text-shadow:0 0 20px rgba(0,212,255,0.4);
+}
+.created-hint{font-size:0.72rem;color:var(--muted);margin-top:6px;}
+.btn-enter-room{
+  display:inline-block;margin-top:14px;
+  padding:10px 28px;
+  background:var(--accent); border:none; border-radius:10px;
+  color:#000; font-family:'Outfit',sans-serif;
+  font-size:0.88rem;font-weight:700; cursor:pointer;
+  transition:all 0.2s; text-decoration:none;
+}
+.btn-enter-room:hover{
+  background:#22e0ff;
+  box-shadow:0 0 18px rgba(0,212,255,0.4);
+}
+
+/* ── Features strip ── */
+.features-strip{
+  display:flex; gap:10px; flex-wrap:wrap;
+  justify-content:center; margin-top:36px;
+  max-width:600px; width:100%;
+}
+.feat-item{
+  display:flex; align-items:center; gap:7px;
+  background:rgba(255,255,255,0.03);
+  border:1px solid var(--border);
+  border-radius:99px; padding:6px 14px;
+  font-size:0.72rem; color:var(--muted);
+}
+
+/* scrollbar */
+::-webkit-scrollbar{width:3px;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+
+/* spinner */
+.spinner{
+  display:inline-block; width:14px; height:14px;
+  border:2px solid rgba(0,0,0,0.3);
+  border-top-color:#000; border-radius:50%;
+  animation:spin 0.6s linear infinite;
+  vertical-align:middle; margin-right:4px;
+}
+.btn-join .spinner{border-color:rgba(255,255,255,0.3);border-top-color:#fff;}
+@keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+
+<!-- Ambient orbs -->
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<!-- ════════════════════════════════ TOPBAR -->
+<nav class="topbar">
+  <div class="logo-text">Emoti<span>Cam</span> 🎭</div>
+  <div class="user-info">
+    <div class="user-avatar">{{ avatar }}</div>
+    <span class="user-name">{{ username }}</span>
+    <a href="/logout"><button class="btn-logout">Logout</button></a>
+  </div>
+</nav>
+
+<!-- ════════════════════════════════ MAIN -->
+<main class="lobby-main">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-greeting">Welcome back, {{ username }} {{ avatar }}</div>
+    <h1 class="hero-title">Start a <span class="grad">Live Room</span></h1>
+    <p class="hero-sub">Create a private room or jump into one with a code. AI reads your emotions in real time.</p>
+  </div>
+
+  <!-- Action cards -->
+  <div class="actions-grid">
+
+    <!-- ── CREATE ROOM ── -->
+    <div class="action-card" id="createCard">
+      <span class="card-icon">🚀</span>
+      <div class="card-title">Create Room</div>
+      <p class="card-desc">Start a new private room and invite friends with a 6-character code.</p>
+      <button class="btn-create" id="btnCreate" onclick="createRoom()">
+        ✨ Create New Room
+      </button>
+      <!-- Room code reveal after creation -->
+      <div class="room-created" id="roomCreated">
+        <div class="created-label">Your Room Code</div>
+        <div class="created-code" id="createdCode">——</div>
+        <div class="created-hint">Share this with friends to join</div>
+        <a class="btn-enter-room" id="enterRoomBtn" href="#">Enter Room →</a>
+      </div>
+      <div class="card-msg" id="createMsg"></div>
+    </div>
+
+    <!-- ── JOIN ROOM ── -->
+    <div class="action-card join-card" id="joinCard">
+      <span class="card-icon">🔑</span>
+      <div class="card-title">Join Room</div>
+      <p class="card-desc">Have a code? Enter it below to jump into a live session instantly.</p>
+      <div class="join-row">
+        <input
+          type="text" id="codeInput" class="code-input"
+          placeholder="ABC123" maxlength="6" autocomplete="off"
+          oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"
+          onkeydown="if(event.key==='Enter')joinRoom()"
+        />
+        <button class="btn-join" id="btnJoin" onclick="joinRoom()">Join →</button>
+      </div>
+      <div class="card-msg" id="joinMsg"></div>
+    </div>
+
+  </div><!-- /actions-grid -->
+
+  <!-- Feature strip -->
+  <div class="features-strip">
+    <div class="feat-item">🧠 DeepFace Emotions</div>
+    <div class="feat-item">✋ MediaPipe Gestures</div>
+    <div class="feat-item">📡 Socket.IO Real-time</div>
+    <div class="feat-item">🎨 Canvas Overlay</div>
+    <div class="feat-item">💬 Live Chat</div>
+  </div>
+
+</main>
+
+<script>
+// ── Create Room ────────────────────────────────────────────────
+async function createRoom() {
+  const btn = document.getElementById('btnCreate');
+  const msg = document.getElementById('createMsg');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Creating…';
+  hideMsg(msg);
+
+  try {
+    const res  = await fetch('/api/create_room', { method:'POST' });
+    const data = await res.json();
+
+    if (data.error) {
+      showMsg(msg, data.error, 'error');
+      return;
+    }
+
+    // Show room code with enter button
+    const code = data.code;
+    document.getElementById('createdCode').textContent  = code;
+    document.getElementById('enterRoomBtn').href        = '/room/' + code;
+    document.getElementById('roomCreated').classList.add('show');
+    btn.innerHTML = '✅ Room Created';
+
+  } catch (e) {
+    showMsg(msg, 'Network error — try again', 'error');
+    btn.disabled  = false;
+    btn.innerHTML = '✨ Create New Room';
+  }
+}
+
+// ── Join Room ──────────────────────────────────────────────────
+async function joinRoom() {
+  const input = document.getElementById('codeInput');
+  const btn   = document.getElementById('btnJoin');
+  const msg   = document.getElementById('joinMsg');
+  const code  = input.value.trim().toUpperCase();
+
+  if (code.length < 6) {
+    showMsg(msg, 'Please enter a valid 6-character code', 'error');
+    input.focus();
+    return;
+  }
+
+  btn.disabled  = true;
+  btn.innerHTML = '<span class="spinner" style="border-color:rgba(255,255,255,0.3);border-top-color:#fff"></span> Joining…';
+  hideMsg(msg);
+
+  try {
+    const res  = await fetch('/api/join_room', {
+      method  : 'POST',
+      headers : { 'Content-Type': 'application/json' },
+      body    : JSON.stringify({ code }),
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      showMsg(msg, data.error, 'error');
+      btn.disabled  = false;
+      btn.innerHTML = 'Join →';
+      return;
+    }
+
+    // Success — navigate to room
+    showMsg(msg, '✅ Room found! Joining…', 'success');
+    setTimeout(() => window.location.href = '/room/' + data.code, 400);
+
+  } catch (e) {
+    showMsg(msg, 'Network error — try again', 'error');
+    btn.disabled  = false;
+    btn.innerHTML = 'Join →';
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function showMsg(el, text, type) {
+  el.textContent  = text;
+  el.className    = 'card-msg ' + type + ' show';
+}
+function hideMsg(el) {
+  el.className = 'card-msg';
+}
+</script>
+
+</body>
+</html>

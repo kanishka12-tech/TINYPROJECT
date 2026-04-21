@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>EmotiCam — Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;900&display=swap" rel="stylesheet"/>
+<style>
+/* ═══════════════════════════════════════════════ BASE */
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#070b14; --surface:#0d1424; --card:#0f1729;
+  --border:#1e2d45; --accent:#00d4ff; --accent2:#ff3cac;
+  --green:#00ff88; --yellow:#fbbf24; --red:#ef4444;
+  --text:#e2e8f0; --muted:#64748b;
+}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:'Outfit',sans-serif;
+  min-height:100dvh; display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  overflow:hidden; position:relative;
+}
+
+/* ── Ambient background orbs ── */
+.orb{
+  position:fixed; border-radius:50%; filter:blur(90px);
+  pointer-events:none; z-index:0; opacity:0.35;
+}
+.orb-1{width:520px;height:520px;background:radial-gradient(circle,rgba(0,212,255,0.25),transparent 70%);top:-160px;left:-160px;}
+.orb-2{width:460px;height:460px;background:radial-gradient(circle,rgba(255,60,172,0.2),transparent 70%);bottom:-120px;right:-120px;}
+.orb-3{width:280px;height:280px;background:radial-gradient(circle,rgba(0,255,136,0.12),transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);}
+
+/* ── Card ── */
+.auth-card{
+  position:relative; z-index:10;
+  width:100%; max-width:420px;
+  background:rgba(13,20,36,0.85);
+  border:1px solid var(--border);
+  border-radius:24px;
+  padding:40px 36px;
+  backdrop-filter:blur(24px);
+  box-shadow:0 0 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,212,255,0.06);
+}
+
+/* ── Logo ── */
+.logo{
+  text-align:center; margin-bottom:28px;
+}
+.logo-text{
+  font-size:1.9rem; font-weight:900; letter-spacing:-0.5px;
+}
+.logo-text span{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+}
+.logo-sub{
+  font-size:0.78rem; color:var(--muted); margin-top:4px;
+  letter-spacing:0.5px;
+}
+
+/* ── Error banner ── */
+.error-banner{
+  background:rgba(239,68,68,0.1);
+  border:1px solid rgba(239,68,68,0.35);
+  border-radius:10px;
+  padding:10px 14px;
+  font-size:0.8rem;
+  color:#fca5a5;
+  margin-bottom:20px;
+  display:flex; align-items:center; gap:8px;
+}
+
+/* ── Form ── */
+.field{margin-bottom:18px;}
+.field label{
+  display:block; font-size:0.72rem; font-weight:600;
+  color:var(--muted); text-transform:uppercase; letter-spacing:1px;
+  margin-bottom:7px;
+}
+.field input{
+  width:100%; padding:12px 16px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid var(--border);
+  border-radius:12px;
+  color:var(--text);
+  font-family:'Outfit',sans-serif;
+  font-size:0.92rem;
+  outline:none;
+  transition:border-color 0.2s, box-shadow 0.2s;
+}
+.field input:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(0,212,255,0.1);
+}
+.field input::placeholder{color:var(--muted);}
+
+/* ── Submit button ── */
+.btn-primary{
+  width:100%; padding:13px;
+  background:linear-gradient(135deg,var(--accent),#0099bb);
+  border:none; border-radius:12px;
+  color:#000; font-family:'Outfit',sans-serif;
+  font-size:0.95rem; font-weight:700;
+  cursor:pointer; transition:all 0.2s;
+  margin-top:6px;
+  letter-spacing:0.3px;
+}
+.btn-primary:hover{
+  background:linear-gradient(135deg,#22e0ff,#00b8d9);
+  box-shadow:0 0 24px rgba(0,212,255,0.35);
+  transform:translateY(-1px);
+}
+.btn-primary:active{transform:translateY(0);}
+
+/* ── Footer link ── */
+.auth-footer{
+  text-align:center; margin-top:24px;
+  font-size:0.82rem; color:var(--muted);
+}
+.auth-footer a{
+  color:var(--accent); text-decoration:none; font-weight:600;
+  transition:opacity 0.2s;
+}
+.auth-footer a:hover{opacity:0.8; text-decoration:underline;}
+
+/* ── Divider ── */
+.divider{
+  display:flex; align-items:center; gap:12px;
+  margin:22px 0; color:var(--muted); font-size:0.72rem;
+}
+.divider::before,.divider::after{
+  content:''; flex:1; height:1px; background:var(--border);
+}
+
+/* ── Feature pills ── */
+.features{
+  display:flex; gap:8px; justify-content:center;
+  flex-wrap:wrap; margin-top:26px;
+}
+.feat-pill{
+  display:flex; align-items:center; gap:5px;
+  background:rgba(255,255,255,0.03);
+  border:1px solid var(--border);
+  border-radius:99px; padding:4px 11px;
+  font-size:0.67rem; color:var(--muted);
+}
+
+/* scrollbar */
+::-webkit-scrollbar{width:3px;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+</style>
+</head>
+<body>
+
+<!-- Ambient orbs -->
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<div class="auth-card">
+
+  <!-- Logo -->
+  <div class="logo">
+    <div class="logo-text">Emoti<span>Cam</span> 🎭</div>
+    <div class="logo-sub">Real-time emotion & gesture detection</div>
+  </div>
+
+  <!-- Error message (rendered by Flask if login fails) -->
+  {% if error %}
+  <div class="error-banner">⚠️ {{ error }}</div>
+  {% endif %}
+
+  <!-- Login form -->
+  <form method="POST" action="/login" autocomplete="on">
+    <div class="field">
+      <label>Username</label>
+      <input type="text" name="username" placeholder="Enter your username"
+             autocomplete="username" required autofocus/>
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" name="password" placeholder="Enter your password"
+             autocomplete="current-password" required/>
+    </div>
+    <button type="submit" class="btn-primary">🚀 Login</button>
+  </form>
+
+  <div class="divider">or</div>
+
+  <div class="auth-footer">
+    Don't have an account?
+    <a href="/signup">Sign up free →</a>
+  </div>
+
+  <!-- Feature hints -->
+  <div class="features">
+    <div class="feat-pill">🧠 AI Emotion</div>
+    <div class="feat-pill">✋ Gestures</div>
+    <div class="feat-pill">💬 Live Chat</div>
+    <div class="feat-pill">⚡ Real-time</div>
+  </div>
+
+</div>
+
+</body>
+</html>
