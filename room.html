@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>EmotiCam — Room {{ room_code }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;900&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#070b14;--surface:#0d1424;--card:#0f1729;
+  --border:#1e2d45;--accent:#00d4ff;--accent2:#ff3cac;
+  --green:#00ff88;--yellow:#fbbf24;--text:#e2e8f0;--muted:#64748b;
+}
+body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;
+     height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+
+/* Top bar */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 24px;border-bottom:1px solid var(--border);
+  background:rgba(7,11,20,0.95);backdrop-filter:blur(12px);
+  flex-shrink:0;z-index:20;
+}
+.topbar-left{display:flex;align-items:center;gap:16px;}
+.logo-sm{font-size:1.1rem;font-weight:900;}
+.logo-sm span{background:linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.room-code-badge{
+  display:flex;align-items:center;gap:6px;
+  background:var(--card);border:1px solid var(--border);
+  border-radius:8px;padding:5px 12px;font-size:0.78rem;
+}
+.room-code-badge .code{font-weight:700;letter-spacing:2px;color:var(--accent);}
+.copy-btn{
+  background:none;border:none;color:var(--muted);cursor:pointer;
+  font-size:0.75rem;padding:2px 6px;border-radius:4px;transition:all 0.2s;
+}
+.copy-btn:hover{color:var(--accent);}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px var(--green);animation:pulse 1.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+
+.topbar-right{display:flex;align-items:center;gap:10px;}
+.member-count{font-size:0.78rem;color:var(--muted);}
+.btn-leave{
+  padding:7px 16px;background:rgba(239,68,68,0.15);
+  border:1px solid rgba(239,68,68,0.4);border-radius:8px;
+  color:#fca5a5;font-family:'Outfit',sans-serif;
+  font-size:0.82rem;font-weight:600;cursor:pointer;transition:all 0.2s;
+}
+.btn-leave:hover{background:rgba(239,68,68,0.3);}
+
+/* Layout */
+.room-body{display:flex;flex:1;overflow:hidden;}
+
+/* Video area */
+.video-area{flex:1;display:flex;flex-direction:column;padding:16px;gap:12px;overflow:hidden;}
+.video-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;flex:1;min-height:0;}
+.video-panel{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:16px;overflow:hidden;position:relative;
+}
+.video-panel video, .video-panel canvas{width:100%;height:100%;object-fit:cover;display:block;}
+.vid-label{
+  position:absolute;top:10px;left:10px;z-index:5;
+  background:rgba(0,0,0,0.65);border:1px solid var(--border);
+  border-radius:6px;padding:3px 10px;font-size:0.68rem;
+  color:var(--muted);text-transform:uppercase;letter-spacing:1px;
+}
+.fps-tag{
+  position:absolute;bottom:10px;right:10px;z-index:5;
+  background:rgba(0,0,0,0.7);border-radius:6px;
+  padding:3px 8px;font-size:0.65rem;color:var(--accent);
+}
+
+/* Emotion + hand strip */
+.info-strip{
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;flex-shrink:0;
+}
+.info-card{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:12px;padding:12px 16px;
+  display:flex;align-items:center;gap:12px;
+}
+.info-emoji{font-size:1.8rem;flex-shrink:0;}
+.info-text .label{font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+.info-text .value{font-size:0.95rem;font-weight:700;margin-top:2px;}
+.info-text .score{font-size:0.7rem;color:var(--muted);margin-top:1px;}
+
+/* Sidebar */
+.sidebar{
+  width:300px;flex-shrink:0;
+  border-left:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.sidebar-tabs{
+  display:flex;border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.tab{
+  flex:1;padding:12px;text-align:center;font-size:0.8rem;
+  font-weight:600;cursor:pointer;color:var(--muted);
+  border-bottom:2px solid transparent;transition:all 0.2s;
+}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+.tab-content{flex:1;overflow:hidden;display:none;}
+.tab-content.active{display:flex;flex-direction:column;}
+
+/* Emotion bars panel */
+.emo-bars{flex:1;overflow-y:auto;padding:14px;}
+.emo-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:0.78rem;}
+.emo-bar-label{width:70px;color:var(--muted);text-transform:capitalize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.emo-bar-track{flex:1;height:7px;background:var(--border);border-radius:99px;overflow:hidden;}
+.emo-bar-fill{height:100%;border-radius:99px;transition:width 0.5s ease;}
+.emo-bar-pct{width:32px;text-align:right;color:var(--muted);font-size:0.68rem;}
+
+/* Gesture panel */
+.gesture-panel{flex:1;overflow-y:auto;padding:14px;}
+.gesture-section{margin-bottom:16px;}
+.gesture-section-title{font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}
+.gesture-detected{
+  display:flex;align-items:center;gap:10px;
+  background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.2);
+  border-radius:10px;padding:12px;margin-bottom:8px;
+}
+.gesture-detected .g-emoji{font-size:1.8rem;}
+.gesture-detected .g-info .g-name{font-weight:600;font-size:0.9rem;}
+.gesture-detected .g-info .g-side{font-size:0.72rem;color:var(--muted);}
+.no-gesture{color:var(--muted);font-size:0.82rem;text-align:center;padding:20px 0;}
+.gesture-grid-ref{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+.g-ref-item{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:6px 4px;text-align:center;
+}
+.g-ref-item .g-ref-emoji{font-size:1.3rem;display:block;}
+.g-ref-item .g-ref-lbl{font-size:0.5rem;color:var(--muted);margin-top:2px;display:block;}
+
+/* Chat panel */
+.chat-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.chat-messages{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;}
+.chat-msg{
+  background:var(--surface);border-radius:10px;
+  padding:8px 12px;font-size:0.82rem;max-width:90%;
+}
+.chat-msg.me{align-self:flex-end;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.2);}
+.chat-msg .msg-header{display:flex;align-items:center;gap:6px;margin-bottom:3px;}
+.chat-msg .msg-avatar{font-size:0.9rem;}
+.chat-msg .msg-user{font-weight:600;font-size:0.75rem;color:var(--accent);}
+.chat-msg .msg-time{font-size:0.65rem;color:var(--muted);margin-left:auto;}
+.chat-msg .msg-text{color:var(--text);line-height:1.4;}
+.chat-input-row{
+  display:flex;gap:8px;padding:12px;
+  border-top:1px solid var(--border);flex-shrink:0;
+}
+.chat-input{
+  flex:1;padding:9px 12px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid var(--border);border-radius:10px;
+  color:var(--text);font-family:'Outfit',sans-serif;font-size:0.85rem;
+  outline:none;transition:all 0.2s;
+}
+.chat-input:focus{border-color:var(--accent);}
+.btn-send{
+  padding:9px 14px;background:var(--accent);
+  border:none;border-radius:10px;color:#000;
+  font-weight:700;font-size:0.85rem;cursor:pointer;transition:all 0.2s;
+}
+.btn-send:hover{background:#00b8e0;}
+
+/* Members panel */
+.members-panel{flex:1;overflow-y:auto;padding:14px;}
+.member-item{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 12px;border-radius:10px;
+  background:var(--surface);margin-bottom:8px;font-size:0.85rem;
+}
+.member-av{font-size:1.4rem;}
+.member-name{font-weight:600;}
+.member-you{font-size:0.7rem;color:var(--accent);margin-left:4px;}
+.host-badge{font-size:0.65rem;color:var(--yellow);margin-left:4px;}
+
+/* Controls bottom */
+.controls-bar{
+  display:flex;align-items:center;justify-content:center;gap:12px;
+  padding:12px 16px;border-top:1px solid var(--border);
+  background:rgba(7,11,20,0.9);flex-shrink:0;
+}
+.ctrl-btn{
+  width:46px;height:46px;border-radius:50%;
+  border:1px solid var(--border);background:var(--card);
+  color:var(--text);font-size:1.1rem;cursor:pointer;
+  transition:all 0.2s;display:flex;align-items:center;justify-content:center;
+}
+.ctrl-btn:hover{border-color:var(--accent);background:rgba(0,212,255,0.08);}
+.ctrl-btn.active{background:rgba(0,212,255,0.15);border-color:var(--accent);}
+.ctrl-btn.danger{border-color:rgba(239,68,68,0.4);color:#fca5a5;}
+.ctrl-btn.danger:hover{background:rgba(239,68,68,0.15);}
+
+/* hidden canvas */
+#captureCanvas{display:none;}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo-sm">Emoti<span>Cam</span></div>
+    <div class="room-code-badge">
+      <div class="live-dot"></div>
+      <span>Room:</span>
+      <span class="code" id="roomCodeDisplay">{{ room_code }}</span>
+      <button class="copy-btn" onclick="copyCode()">📋 Copy</button>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="member-count" id="memberCountBadge">1 member</span>
+    <button class="btn-leave" onclick="leaveRoom()">Leave Room</button>
+  </div>
+</div>
+
+<div class="room-body">
+  <!-- Video + info area -->
+  <div class="video-area">
+    <div class="video-grid">
+      <div class="video-panel">
+        <div class="vid-label">📷 Camera</div>
+        <video id="rawVideo" autoplay muted playsinline></video>
+      </div>
+      <div class="video-panel">
+        <div class="vid-label">🎭 EmotiFilter</div>
+        <canvas id="processedCanvas"></canvas>
+        <div class="fps-tag" id="fpsTag">-- fps</div>
+      </div>
+    </div>
+
+    <!-- Info strip -->
+    <div class="info-strip">
+      <div class="info-card">
+        <span class="info-emoji" id="faceEmojiDisplay">😐</span>
+        <div class="info-text">
+          <div class="label">Face Emotion</div>
+          <div class="value" id="faceEmotionName">Detecting…</div>
+          <div class="score" id="faceEmotionScore">—</div>
+        </div>
+      </div>
+      <div class="info-card">
+        <span class="info-emoji" id="handEmojiDisplay">✋</span>
+        <div class="info-text">
+          <div class="label">Hand Gesture</div>
+          <div class="value" id="handGestureName">No hand</div>
+          <div class="score" id="handGestureSide">—</div>
+        </div>
+      </div>
+      <div class="info-card">
+        <div class="info-text">
+          <div class="label">Session</div>
+          <div class="value" id="statFrames">0 frames</div>
+          <div class="score" id="statFps">— fps</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-tabs">
+      <div class="tab active" onclick="switchTab('chat',this)">💬 Chat</div>
+      <div class="tab" onclick="switchTab('emotions',this)">😄 Emotions</div>
+      <div class="tab" onclick="switchTab('gestures',this)">🖐️ Gestures</div>
+      <div class="tab" onclick="switchTab('members',this)">👥 Members</div>
+    </div>
+
+    <!-- Chat -->
+    <div class="tab-content active" id="tab-chat">
+      <div class="chat-panel">
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input-row">
+          <input class="chat-input" id="chatInput" placeholder="Type a message…"
+                 onkeydown="if(event.key==='Enter')sendChat()"/>
+          <button class="btn-send" onclick="sendChat()">→</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Emotion bars -->
+    <div class="tab-content" id="tab-emotions">
+      <div class="emo-bars" id="emoBars">
+        <div style="color:var(--muted);font-size:0.82rem;text-align:center;padding:20px 0;">
+          Start camera to see emotion breakdown
+        </div>
+      </div>
+    </div>
+
+    <!-- Gestures -->
+    <div class="tab-content" id="tab-gestures">
+      <div class="gesture-panel">
+        <div class="gesture-section">
+          <div class="gesture-section-title">Currently Detected</div>
+          <div id="detectedGestures">
+            <div class="no-gesture">No gestures detected yet</div>
+          </div>
+        </div>
+        <div class="gesture-section">
+          <div class="gesture-section-title">Gesture Reference</div>
+          <div class="gesture-grid-ref">
+            <div class="g-ref-item"><span class="g-ref-emoji">👍</span><span class="g-ref-lbl">Thumbs Up</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">👎</span><span class="g-ref-lbl">Thumbs Down</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">✌️</span><span class="g-ref-lbl">Peace</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">👌</span><span class="g-ref-lbl">OK</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">✊</span><span class="g-ref-lbl">Fist</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">🖐️</span><span class="g-ref-lbl">Open</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">☝️</span><span class="g-ref-lbl">Point</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">🤘</span><span class="g-ref-lbl">Rock On</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">🤙</span><span class="g-ref-lbl">Call Me</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">🤟</span><span class="g-ref-lbl">Love</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">🤞</span><span class="g-ref-lbl">Crossed</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">🤌</span><span class="g-ref-lbl">Pinch</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">👋</span><span class="g-ref-lbl">Wave</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">🙏</span><span class="g-ref-lbl">Pray</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">🖖</span><span class="g-ref-lbl">Vulcan</span></div>
+            <div class="g-ref-item"><span class="g-ref-emoji">🛑</span><span class="g-ref-lbl">Stop</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Members -->
+    <div class="tab-content" id="tab-members">
+      <div class="members-panel" id="membersList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Controls -->
+<div class="controls-bar">
+  <button class="ctrl-btn" id="btnCam" onclick="toggleCamera()" title="Start/Stop Camera">📷</button>
+  <button class="ctrl-btn active" id="btnFilter" onclick="toggleFilter()" title="Toggle Filter">🎭</button>
+  <button class="ctrl-btn" onclick="takeSnapshot()" title="Snapshot">📸</button>
+  <button class="ctrl-btn danger" onclick="leaveRoom()" title="Leave">🚪</button>
+</div>
+
+<canvas id="captureCanvas"></canvas>
+
+<script>
+const ROOM_CODE = "{{ room_code }}";
+const MY_NAME   = "{{ username }}";
+const MY_AVATAR = "{{ avatar }}";
+const ROOM_HOST = "{{ room_info.host }}";
+
+const socket = io();
+let stream = null, sending = false, filterOn = true;
+let frameCount = 0, fpsCount = 0, fpsTimer = null;
+let members = [];
+
+const EMOTION_COLORS = {
+  happy:'#22c55e', sad:'#60a5fa', angry:'#ef4444', fear:'#a78bfa',
+  surprise:'#fbbf24', disgust:'#4ade80', neutral:'#94a3b8',
+  excited:'#f97316', love:'#f43f5e', joyful:'#34d399', content:'#6ee7b7',
+  proud:'#818cf8', grateful:'#a3e635', hopeful:'#38bdf8', playful:'#fb923c',
+  silly:'#e879f9', confused:'#94a3b8', anxious:'#8b5cf6', nervous:'#a78bfa',
+  bored:'#64748b', tired:'#475569', stressed:'#dc2626', frustrated:'#ea580c',
+  hurt:'#93c5fd', lonely:'#6366f1', embarrassed:'#fb7185', shy:'#f472b6',
+  smug:'#fde047', mischievous:'#c084fc', calm:'#2dd4bf',
+};
+
+// ── Socket ──────────────────────────────────────────────────
+socket.on('connect', () => {
+  socket.emit('join_room_socket', {code: ROOM_CODE});
+  addSystemMsg('Connected to room ' + ROOM_CODE);
+});
+
+socket.on('user_joined', (data) => {
+  members = data.members || [];
+  updateMembers();
+  if (data.username !== MY_NAME) addSystemMsg(data.username + ' joined the room 👋');
+});
+
+socket.on('user_left', (data) => {
+  members = data.members || [];
+  updateMembers();
+  addSystemMsg(data.username + ' left the room');
+});
+
+socket.on('chat_message', (data) => {
+  addChatMsg(data);
+});
+
+socket.on('processed_frame', (data) => {
+  drawCanvas(data.image);
+  frameCount++; fpsCount++;
+  document.getElementById('statFrames').textContent = frameCount + ' frames';
+
+  if (data.emotions && data.emotions.length > 0) {
+    const det = data.emotions[0];
+    document.getElementById('faceEmojiDisplay').textContent = det.emoji || '😐';
+    document.getElementById('faceEmotionName').textContent = det.emotion || 'neutral';
+    document.getElementById('faceEmotionScore').textContent = 'Confidence: ' + Math.round((det.score||0)*100) + '%';
+    updateEmoBars(det.all || {});
+  }
+
+  if (data.hands && data.hands.length > 0) {
+    const h = data.hands[0];
+    document.getElementById('handEmojiDisplay').textContent = h.emoji || '✋';
+    document.getElementById('handGestureName').textContent = h.label || h.gesture;
+    document.getElementById('handGestureSide').textContent = (h.side || '') + ' hand';
+    updateDetectedGestures(data.hands);
+  } else {
+    document.getElementById('handEmojiDisplay').textContent = '✋';
+    document.getElementById('handGestureName').textContent = 'No hand';
+    document.getElementById('handGestureSide').textContent = '—';
+    document.getElementById('detectedGestures').innerHTML = '<div class="no-gesture">No gestures detected</div>';
+  }
+});
+
+// ── Camera ──────────────────────────────────────────────────
+async function toggleCamera() {
+  if (sending) {
+    stopCamera();
+    document.getElementById('btnCam').textContent = '📷';
+  } else {
+    await startCamera();
+    document.getElementById('btnCam').textContent = '⏹️';
+  }
+}
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {width:640, height:480}, audio: false
+    });
+    const vid = document.getElementById('rawVideo');
+    vid.srcObject = stream;
+    await vid.play();
+    sending = true;
+    startFps();
+    sendLoop();
+    addSystemMsg('Camera started');
+  } catch(e) {
+    addSystemMsg('Camera error: ' + e.message);
+  }
+}
+
+function stopCamera() {
+  sending = false;
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  clearInterval(fpsTimer);
+  addSystemMsg('Camera stopped');
+}
+
+function sendLoop() {
+  if (!sending) return;
+  const vid = document.getElementById('rawVideo');
+  const cap = document.getElementById('captureCanvas');
+  cap.width = vid.videoWidth || 640;
+  cap.height = vid.videoHeight || 480;
+  cap.getContext('2d').drawImage(vid, 0, 0);
+  if (filterOn) {
+    socket.emit('video_frame', {image: cap.toDataURL('image/jpeg', 0.7)});
+  }
+  setTimeout(sendLoop, 70); // ~14fps
+}
+
+function toggleFilter() {
+  filterOn = !filterOn;
+  const btn = document.getElementById('btnFilter');
+  btn.className = 'ctrl-btn' + (filterOn ? ' active' : '');
+  addSystemMsg('Filter ' + (filterOn ? 'ON' : 'OFF'));
+}
+
+function drawCanvas(dataUrl) {
+  const canvas = document.getElementById('processedCanvas');
+  const img = new Image();
+  img.onload = () => {
+    canvas.width = img.width; canvas.height = img.height;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+  };
+  img.src = dataUrl;
+}
+
+// ── Emotion bars ────────────────────────────────────────────
+function updateEmoBars(all) {
+  const container = document.getElementById('emoBars');
+  const sorted = Object.entries(all).sort((a,b)=>b[1]-a[1]);
+  container.innerHTML = sorted.map(([emo, val]) => {
+    const pct = Math.round(val * 100);
+    const color = EMOTION_COLORS[emo] || '#7c3aed';
+    return `<div class="emo-bar-row">
+      <span class="emo-bar-label">${emo}</span>
+      <div class="emo-bar-track">
+        <div class="emo-bar-fill" style="width:${pct}%;background:${color}"></div>
+      </div>
+      <span class="emo-bar-pct">${pct}%</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Gestures ────────────────────────────────────────────────
+function updateDetectedGestures(hands) {
+  const el = document.getElementById('detectedGestures');
+  el.innerHTML = hands.map(h => `
+    <div class="gesture-detected">
+      <span class="g-emoji">${h.emoji}</span>
+      <div class="g-info">
+        <div class="g-name">${h.label}</div>
+        <div class="g-side">${h.side} hand</div>
+      </div>
+    </div>`).join('');
+}
+
+// ── Members ─────────────────────────────────────────────────
+function updateMembers() {
+  const el = document.getElementById('membersList');
+  const count = members.length;
+  document.getElementById('memberCountBadge').textContent = count + ' member' + (count !== 1 ? 's' : '');
+  el.innerHTML = members.map(m => `
+    <div class="member-item">
+      <span class="member-av">${m === MY_NAME ? MY_AVATAR : '👤'}</span>
+      <span class="member-name">${m}
+        ${m === MY_NAME ? '<span class="member-you">(you)</span>' : ''}
+        ${m === ROOM_HOST ? '<span class="host-badge">👑 host</span>' : ''}
+      </span>
+    </div>`).join('');
+}
+
+// ── Chat ────────────────────────────────────────────────────
+function sendChat() {
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  socket.emit('chat_message', {room: ROOM_CODE, message: msg});
+  input.value = '';
+}
+
+function addChatMsg(data) {
+  const container = document.getElementById('chatMessages');
+  const isMe = data.username === MY_NAME;
+  const div = document.createElement('div');
+  div.className = 'chat-msg' + (isMe ? ' me' : '');
+  div.innerHTML = `
+    <div class="msg-header">
+      <span class="msg-avatar">${data.avatar || '👤'}</span>
+      <span class="msg-user">${data.username}</span>
+      <span class="msg-time">${data.time}</span>
+    </div>
+    <div class="msg-text">${escHtml(data.message)}</div>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function addSystemMsg(text) {
+  const container = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.style.cssText = 'text-align:center;color:var(--muted);font-size:0.72rem;padding:4px 0;';
+  div.textContent = text;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Tabs ────────────────────────────────────────────────────
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ── Utils ───────────────────────────────────────────────────
+function copyCode() {
+  navigator.clipboard.writeText(ROOM_CODE);
+  const btn = document.querySelector('.copy-btn');
+  btn.textContent = '✅ Copied!';
+  setTimeout(() => btn.textContent = '📋 Copy', 2000);
+}
+
+function takeSnapshot() {
+  const canvas = document.getElementById('processedCanvas');
+  if (!canvas.width) return;
+  const a = document.createElement('a');
+  a.download = `emoticam_${Date.now()}.png`;
+  a.href = canvas.toDataURL();
+  a.click();
+  addSystemMsg('Snapshot saved 📸');
+}
+
+function leaveRoom() {
+  socket.emit('leave_room_socket', {code: ROOM_CODE});
+  stopCamera();
+  window.location.href = '/lobby';
+}
+
+function startFps() {
+  fpsTimer = setInterval(() => {
+    document.getElementById('statFps').textContent = fpsCount + ' fps';
+    document.getElementById('fpsTag').textContent = fpsCount + ' fps';
+    fpsCount = 0;
+  }, 1000);
+}
+
+// Auto-start camera
+window.addEventListener('load', () => {
+  startCamera();
+  updateMembers();
+});
+</script>
+</body>
+</html>
