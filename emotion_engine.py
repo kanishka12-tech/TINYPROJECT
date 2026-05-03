@@ -162,6 +162,9 @@ class EmotionEngine:
         self._last_hands = []
         self._frame_n    = 0
 
+        # ── Shared RNG for emoji grid jitter (one instance, never re-seeded) ──
+        self._rng = np.random.default_rng()
+
         # ── MediaPipe hands ────────────────────────────────────────────────────
         self.mp_hands = None
         self.mp_draw  = None
@@ -174,11 +177,13 @@ class EmotionEngine:
     # ── Model loading ──────────────────────────────────────────────────────────
     def _load_hands(self):
         try:
-            import mediapipe as mp
+            from mediapipe.python.solutions import hands as mp_hands
+            from mediapipe.python.solutions import drawing_utils as mp_draw
+
             print("👉 MediaPipe imported successfully")
 
-            self.mp_hands = mp.solutions.hands
-            self.mp_draw  = mp.solutions.drawing_utils
+            self.mp_hands = mp_hands
+            self.mp_draw = mp_draw
 
             self.hands = self.mp_hands.Hands(
                 static_image_mode=False,
@@ -186,7 +191,9 @@ class EmotionEngine:
                 min_detection_confidence=0.5,
                 min_tracking_confidence=0.5,
             )
+
             print("🔥 MediaPipe Hands initialised successfully")
+
         except Exception as e:
             print("❌ MediaPipe error:", e)
             self.hands = None
@@ -328,6 +335,7 @@ class EmotionEngine:
 
     # ── Draw helpers (legacy — used only by process()) ────────────────────────
     def _draw_emoji(self, frame, cx, cy, size, emoji_char):
+        """Single-emoji draw at (cx, cy) — still used by _draw_hand_overlay."""
         try:
             pil   = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).convert("RGBA")
             layer = Image.new("RGBA", pil.size, (0, 0, 0, 0))
@@ -344,17 +352,91 @@ class EmotionEngine:
         except Exception:
             return frame
 
+    def _draw_emoji_grid(self, frame, x, y, w, h, emoji_char, rng=None):
+        """
+        Fill the face bounding box (x, y, w, h) with a grid of emoji_char.
+
+        Layout rules
+        ────────────
+        • Emoji size  = clamp(w // 4, 16, 40) — scales with face width
+        • Step size   = emoji_size + 4 px padding so tiles never overlap
+        • Each tile gets a small random (±3 px) nudge for an organic feel
+        • A semi-transparent dark rectangle is stamped behind every tile
+          for readability, just like the original single-emoji version
+        • All drawing happens on a single RGBA layer → one alpha_composite
+          call → minimal overhead (no per-emoji PIL conversion)
+        """
+        if rng is None:
+            rng = np.random.default_rng(42)  # deterministic, fast
+
+        try:
+            # ── Emoji size scales with face width ──────────────────────────
+            emoji_size = int(np.clip(w // 4, 16, 40))
+            step       = emoji_size + 4          # tight but not cramped
+
+            # ── Prepare one shared PIL layer ───────────────────────────────
+            pil   = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).convert("RGBA")
+            layer = Image.new("RGBA", pil.size, (0, 0, 0, 0))
+            d     = ImageDraw.Draw(layer)
+            font  = get_font(emoji_size)
+
+            # Pre-measure the emoji once; reuse for every tile
+            bb       = d.textbbox((0, 0), emoji_char, font=font, embedded_color=True)
+            ew, eh   = bb[2] - bb[0], bb[3] - bb[1]
+            half_r   = max(ew, eh) // 2 + 4     # background circle radius
+
+            # ── Grid walk — stay strictly inside [x, x+w) × [y, y+h) ──────
+            # np.arange is faster than a Python range for many columns/rows
+            col_starts = np.arange(x, x + w, step)
+            row_starts = np.arange(y, y + h, step)
+
+            # Random offsets for all tiles at once (vectorised) ─ max ±3 px
+            offsets_x = rng.integers(-3, 4, size=(len(row_starts), len(col_starts)))
+            offsets_y = rng.integers(-3, 4, size=(len(row_starts), len(col_starts)))
+
+            for ri, gy in enumerate(row_starts):
+                for ci, gx in enumerate(col_starts):
+                    cx = int(gx + step // 2 + offsets_x[ri, ci])
+                    cy = int(gy + step // 2 + offsets_y[ri, ci])
+
+                    # Clamp so the tile centre never escapes the bounding box
+                    cx = int(np.clip(cx, x + ew // 2, x + w - ew // 2))
+                    cy = int(np.clip(cy, y + eh // 2, y + h - eh // 2))
+
+                    # Dark disc background (same style as original)
+                    d.ellipse(
+                        [cx - half_r, cy - half_r, cx + half_r, cy + half_r],
+                        fill=(0, 0, 0, 110),
+                    )
+                    # Emoji text — centred on (cx, cy)
+                    d.text(
+                        (cx - ew // 2, cy - eh // 2),
+                        emoji_char,
+                        font=font,
+                        embedded_color=True,
+                    )
+
+            merged = Image.alpha_composite(pil, layer)
+            return cv2.cvtColor(np.array(merged.convert("RGB")), cv2.COLOR_RGB2BGR)
+
+        except Exception as e:
+            log.warning(f"_draw_emoji_grid error: {e}")
+            return frame
+
     def _draw_face_overlay(self, frame, det):
         x, y, w, h = det['box']
         emo   = det['emotion']
         score = det['score']
         info  = EMOTIONS.get(emo, EMOTIONS['neutral'])
         color = info['color']
-        cx    = x + w // 2
-        cy    = y + int(h * 0.38)
-        size  = max(36, min(int(w * 0.7), 120))
-        frame = self._draw_emoji(frame, cx, cy, size, info['emoji'])
+
+        # ── Fill entire face bbox with emoji grid (replaces single-center emoji) ──
+        frame = self._draw_emoji_grid(frame, x, y, w, h, info['emoji'], rng=self._rng)
+
+        # ── Coloured bounding box ──────────────────────────────────────────────
         cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+
+        # ── Emotion label below the box ────────────────────────────────────────
         label = f"{emo.upper()} {int(score * 100)}%"
         font  = cv2.FONT_HERSHEY_DUPLEX
         (tw, th), _ = cv2.getTextSize(label, font, 0.55, 1)
@@ -393,7 +475,7 @@ class EmotionEngine:
         ~10-50× cheaper than process() — no PIL/OpenCV drawing, no base64 roundtrip.
         """
         self._frame_n += 1
-        if self._frame_n % 5 == 0:
+        if self._frame_n % 2 == 0:
             with self._lock:
                 small = cv2.resize(frame, (320, 240))
                 self._pending = small
