@@ -5,7 +5,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>EmotiCam — {{ room_code }}</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;900&display=swap" rel="stylesheet"/>
+
+<!-- Socket.IO -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<!-- SimplePeer for WebRTC -->
+<script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+<!-- face-api.js for client-side emotion detection -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<!-- MediaPipe Hands for client-side gesture detection -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js" crossorigin="anonymous"></script>
+
 <style>
 /* ═══════════════════════════════════════════════════════ BASE */
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -74,8 +84,9 @@ body{
   padding:12px;gap:10px;overflow:hidden;min-width:0;
 }
 .video-grid{
-  display:grid;grid-template-columns:1fr 1fr;
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
   gap:10px;flex:1;min-height:0;
+  grid-auto-rows:1fr;
 }
 
 /* Each video panel */
@@ -83,8 +94,8 @@ body{
   background:#000;border:1px solid var(--border);
   border-radius:16px;overflow:hidden;position:relative;
   transition:border-color 0.4s, box-shadow 0.4s;
+  min-height:200px;
 }
-/* Emotion glow — class added via JS */
 .video-panel.glow-happy  {border-color:#22c55e;box-shadow:0 0 18px rgba(34,197,94,.35);}
 .video-panel.glow-sad    {border-color:#60a5fa;box-shadow:0 0 18px rgba(96,165,250,.35);}
 .video-panel.glow-angry  {border-color:#ef4444;box-shadow:0 0 18px rgba(239,68,68,.35);}
@@ -93,18 +104,14 @@ body{
 .video-panel.glow-neutral {border-color:var(--border);box-shadow:none;}
 .video-panel.glow-excited {border-color:#f97316;box-shadow:0 0 18px rgba(249,115,22,.35);}
 
-/* The actual <video> fills the panel */
 .video-panel video{
   width:100%;height:100%;object-fit:cover;
   display:block;position:absolute;inset:0;
 }
-/* Canvas OVERLAID on top — transparent background */
 .video-panel canvas.overlay{
   position:absolute;inset:0;
   width:100%;height:100%;pointer-events:none;
 }
-/* Hidden capture canvas */
-#captureCanvas{display:none;}
 
 .vid-label{
   position:absolute;top:9px;left:9px;z-index:10;
@@ -121,10 +128,16 @@ body{
 }
 .emotion-badge.visible{opacity:1;}
 .emotion-badge .emo-icon{font-size:1rem;}
-#fps-badge{
+.fps-badge{
   position:absolute;bottom:9px;right:9px;z-index:10;
   background:rgba(0,0,0,0.6);border-radius:6px;
   padding:3px 8px;font-size:0.62rem;color:var(--accent);
+}
+.connecting-badge{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:rgba(0,0,0,0.7);border:1px solid var(--border);
+  border-radius:10px;padding:8px 14px;font-size:0.8rem;color:var(--muted);
+  z-index:5;
 }
 
 /* ─── INFO STRIP ─── */
@@ -162,7 +175,6 @@ body{
 .tab-content{flex:1;overflow:hidden;display:none;flex-direction:column;}
 .tab-content.active{display:flex;}
 
-/* emotion bars */
 .emo-bars{flex:1;overflow-y:auto;padding:12px;}
 .emo-bar-row{display:flex;align-items:center;gap:7px;margin-bottom:9px;font-size:0.75rem;}
 .emo-bar-label{width:68px;color:var(--muted);text-transform:capitalize;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -170,7 +182,6 @@ body{
 .emo-bar-fill{height:100%;border-radius:99px;transition:width 0.45s ease;}
 .emo-bar-pct{width:30px;text-align:right;color:var(--muted);font-size:0.63rem;}
 
-/* gesture panel */
 .gesture-panel{flex:1;overflow-y:auto;padding:12px;}
 .gesture-detected{
   display:flex;align-items:center;gap:10px;
@@ -190,7 +201,6 @@ body{
 .g-ref-item span.re{font-size:1.2rem;display:block;}
 .g-ref-item span.rl{font-size:0.48rem;color:var(--muted);display:block;margin-top:2px;}
 
-/* chat */
 .chat-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 .chat-messages{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:7px;}
 .chat-msg{
@@ -222,7 +232,6 @@ body{
 }
 .btn-send:hover{background:#00b8e0;}
 
-/* members */
 .members-panel{flex:1;overflow-y:auto;padding:12px;}
 .member-item{
   display:flex;align-items:center;gap:9px;
@@ -234,7 +243,6 @@ body{
 .member-you{font-size:0.65rem;color:var(--accent);margin-left:4px;}
 .host-badge{font-size:0.6rem;color:var(--yellow);margin-left:4px;}
 
-/* controls */
 .controls-bar{
   display:flex;align-items:center;justify-content:center;gap:10px;
   padding:10px 16px;border-top:1px solid var(--border);
@@ -252,11 +260,9 @@ body{
 .ctrl-btn.danger:hover{background:rgba(239,68,68,0.14);}
 .ctrl-btn.off{background:rgba(239,68,68,0.1);border-color:rgba(239,68,68,0.4);}
 
-/* scrollbar */
 ::-webkit-scrollbar{width:3px;}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 
-/* ═══════════════════════════ FLOATING EMOJI ANIMATION */
 .float-emoji{
   position:fixed;font-size:2rem;pointer-events:none;z-index:999;
   animation:floatUp 2s ease-out forwards;
@@ -292,10 +298,10 @@ body{
 
   <!-- ── VIDEO + INFO ── -->
   <div class="video-area">
-    <div class="video-grid">
+    <div class="video-grid" id="videoGrid">
 
-      <!-- MY VIDEO -->
-      <div class="video-panel" id="myPanel">
+      <!-- MY VIDEO (always present) -->
+      <div class="video-panel" id="myPanel" data-peer="self">
         <video id="rawVideo" autoplay muted playsinline></video>
         <canvas class="overlay" id="myOverlay"></canvas>
         <div class="vid-label">You — {{ username }}</div>
@@ -303,21 +309,12 @@ body{
           <span class="emo-icon" id="myEmoIcon">😐</span>
           <span id="myEmoLabel">—</span>
         </div>
-        <div id="fps-badge">0 fps</div>
+        <div class="fps-badge" id="fps-badge">0 fps</div>
       </div>
 
-      <!-- REMOTE / PREVIEW -->
-      <div class="video-panel" id="remotePanel">
-        <video id="remoteVideo" autoplay playsinline style="display:none"></video>
-        <canvas id="remoteCanvas" style="width:100%;height:100%;object-fit:cover;display:block;position:absolute;inset:0;"></canvas>
-        <div class="vid-label">Room Feed</div>
-        <div class="emotion-badge" id="remoteEmoBadge">
-          <span class="emo-icon" id="remoteEmoIcon">😐</span>
-          <span id="remoteEmoLabel">—</span>
-        </div>
-      </div>
+      <!-- Remote panels are added dynamically -->
 
-    </div><!-- /video-grid -->
+    </div>
 
     <!-- INFO STRIP -->
     <div class="info-strip">
@@ -347,7 +344,7 @@ body{
       </div>
     </div>
 
-  </div><!-- /video-area -->
+  </div>
 
   <!-- ── SIDEBAR ── -->
   <div class="sidebar">
@@ -358,7 +355,6 @@ body{
       <div class="tab" onclick="switchTab('members',this)">👥 People</div>
     </div>
 
-    <!-- CHAT -->
     <div class="tab-content active" id="tab-chat">
       <div class="chat-panel">
         <div class="chat-messages" id="chatMessages"></div>
@@ -370,14 +366,12 @@ body{
       </div>
     </div>
 
-    <!-- EMOTION BARS -->
     <div class="tab-content" id="tab-emotions">
       <div class="emo-bars" id="emoBars">
         <p style="color:var(--muted);font-size:0.8rem;text-align:center;padding:20px 0;">Start camera to see emotion data</p>
       </div>
     </div>
 
-    <!-- GESTURES -->
     <div class="tab-content" id="tab-gestures">
       <div class="gesture-panel">
         <div class="gesture-ref-title">Detected</div>
@@ -387,14 +381,13 @@ body{
       </div>
     </div>
 
-    <!-- MEMBERS -->
     <div class="tab-content" id="tab-members">
       <div class="members-panel" id="membersList"></div>
     </div>
 
-  </div><!-- /sidebar -->
+  </div>
 
-</div><!-- /room-body -->
+</div>
 
 <!-- ════════════════════════════════════════════ CONTROLS -->
 <div class="controls-bar">
@@ -404,17 +397,18 @@ body{
   <button class="ctrl-btn danger" onclick="leaveRoom()" title="Leave">🚪</button>
 </div>
 
-<canvas id="captureCanvas"></canvas>
-
 <!-- ════════════════════════════════════════════ SCRIPT -->
 <script>
-// ── Constants injected safely via Jinja ──────────────────────
-const ROOM_CODE = {{ room_code | tojson }};
-const MY_NAME   = {{ username  | tojson }};
-const MY_AVATAR = {{ avatar    | tojson }};
-const ROOM_HOST = {{ room_info.host | tojson }};
+// ═══════════════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════════════
+const ROOM_CODE = {{ room_code | default('') | tojson }};
+const MY_NAME   = {{ username  | default('') | tojson }};
+const MY_AVATAR = {{ avatar    | default('👤') | tojson }};
+const ROOM_HOST = {{ (room_info.host if room_info is defined else '') | tojson }};
 
-// ── Emotion colour map (matches Python EMOTIONS) ─────────────
+const FACEAPI_MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+
 const EMO_COLORS = {
   happy:'#22c55e',sad:'#60a5fa',angry:'#ef4444',fear:'#a78bfa',
   surprise:'#fbbf24',disgust:'#4ade80',neutral:'#94a3b8',
@@ -426,7 +420,11 @@ const EMO_COLORS = {
   embarrassed:'#fb7185',shy:'#f472b6',smug:'#facc15',mischievous:'#a855f7',
 };
 
-// Gesture reference data
+const EMO_EMOJI = {
+  happy:'😄',sad:'😢',angry:'😡',fearful:'😨',fear:'😨',
+  surprised:'😲',surprise:'😲',disgusted:'🤢',disgust:'🤢',neutral:'😐',
+};
+
 const GESTURES_REF = [
   {e:'👍',l:'Thumbs Up'},{e:'👎',l:'Thumbs Down'},{e:'✌️',l:'Peace'},
   {e:'👌',l:'OK'},{e:'✊',l:'Fist'},{e:'🖐️',l:'Open'},
@@ -435,74 +433,427 @@ const GESTURES_REF = [
   {e:'👋',l:'Wave'},{e:'🙏',l:'Pray'},{e:'🖖',l:'Vulcan'},{e:'🛑',l:'Stop'},
 ];
 
-// ── State ─────────────────────────────────────────────────────
-let stream    = null;
-let sending   = false;
-let filterOn  = true;
-let fpsCount  = 0;
-let fpsTimer  = null;
-let sendTimer = null;
-let members   = [];
-let lastFaces = [];
-let lastHands = [];
-let animFrame = null;
+const HAND_GESTURES = {
+  thumbs_up:   {emoji:'👍', label:'Thumbs Up',     color:'#22c55e'},
+  thumbs_down: {emoji:'👎', label:'Thumbs Down',   color:'#ef4444'},
+  peace:       {emoji:'✌️', label:'Peace',          color:'#38bdf8'},
+  ok:          {emoji:'👌', label:'OK',             color:'#34d399'},
+  fist:        {emoji:'✊', label:'Fist',           color:'#6366f1'},
+  open_hand:   {emoji:'🖐️', label:'Open Hand',     color:'#fbbf24'},
+  pointing:    {emoji:'☝️', label:'Pointing',       color:'#f97316'},
+  rock:        {emoji:'🤘', label:'Rock On',        color:'#a855f7'},
+  call_me:     {emoji:'🤙', label:'Call Me',        color:'#06b6d4'},
+  love_sign:   {emoji:'🤟', label:'Love Sign',      color:'#f43f5e'},
+  crossed:     {emoji:'🤞', label:'Crossed',        color:'#facc15'},
+  pinch:       {emoji:'🤌', label:'Pinch',          color:'#ea580c'},
+  vulcan:      {emoji:'🖖', label:'Vulcan',         color:'#64748b'},
+  stop:        {emoji:'🛑', label:'Stop',           color:'#ef4444'},
+};
 
-// ── Socket ────────────────────────────────────────────────────
-const socket = io({ transports: ['websocket'], upgrade: false });
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
+let localStream = null;
+let camOn       = false;
+let filterOn    = true;
+let fpsCount    = 0;
+let fpsTimer    = null;
+let animFrame   = null;
+let members     = [];
+let lastFaces   = [];
+let lastHands   = [];
+let modelsReady = false;
+let handsModel  = null;
+let handsTimer  = null;
+let lastFloatEmo = '';
+let currentGlow  = '';
+
+// peers: { socketId: { peer: SimplePeer, username, stream, panel } }
+const peers = {};
+let mySocketId = null;
+
+// ═══════════════════════════════════════════════════════════════════
+// SOCKET.IO  — signaling only
+// ═══════════════════════════════════════════════════════════════════
+const socket = io({ transports: ['websocket','polling'] });
 
 socket.on('connect', () => {
+  mySocketId = socket.id;
   socket.emit('join_room_socket', { code: ROOM_CODE });
   addSystemMsg('Connected to room ' + ROOM_CODE);
 });
 
 socket.on('disconnect', () => addSystemMsg('Disconnected — reconnecting…'));
 
+// Server sends list of existing peers when we join
+socket.on('existing_peers', data => {
+  // Initiate connection to every peer that was already in the room
+  (data.peers || []).forEach(p => {
+    createPeerConnection(p.sid, p.username, true);
+  });
+});
+
+// New user joined — they will initiate to us, but track member list
 socket.on('user_joined', d => {
   members = d.members || [];
   updateMembers();
-  if (d.username !== MY_NAME) addSystemMsg('👋 ' + d.username + ' joined');
+  if (d.username && d.username !== MY_NAME) {
+    addSystemMsg('👋 ' + d.username + ' joined');
+  }
 });
 
 socket.on('user_left', d => {
   members = d.members || [];
   updateMembers();
-  addSystemMsg('🚶 ' + d.username + ' left');
+  if (d.sid && peers[d.sid]) {
+    removePeer(d.sid);
+  }
+  if (d.username) addSystemMsg('🚶 ' + d.username + ' left');
+});
+
+// WebRTC signaling
+socket.on('signal', data => {
+  console.log("🔥 SIGNAL RECEIVED:", data); // 👈 ADD THIS LINE
+
+  const { from, fromUsername, signal } = data;
+  let entry = peers[from];
+
+  if (!entry) {
+    console.log("🛠 Creating peer for:", from); // 👈 OPTIONAL DEBUG
+    entry = createPeerConnection(from, fromUsername, false);
+  }
+
+  try {
+    entry.peer.signal(signal);
+  } catch (e) {
+    console.warn('signal error', e);
+  }
 });
 
 socket.on('chat_message', addChatMsg);
 
-// ── Detection result — lightweight JSON, no image ─────────────
-socket.on('detection_result', data => {
-  const faces = data.faces || [];
-  const hands = data.hands || [];
+// ═══════════════════════════════════════════════════════════════════
+// WEBRTC  — peer connections
+// ═══════════════════════════════════════════════════════════════════
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  }
+];
 
-  // Store for canvas render loop
-  if (data.username === MY_NAME) {
-    lastFaces = faces;
-    lastHands = hands;
+function createPeerConnection(remoteSid, remoteUsername, initiator) {
+  if (peers[remoteSid]) return peers[remoteSid];
+
+  const peer = new SimplePeer({
+    initiator,
+    trickle: false,
+    stream: localStream || undefined,
+    config: { iceServers: ICE_SERVERS },
+  });
+
+  const panel = createRemotePanel(remoteSid, remoteUsername);
+  const entry = { peer, username: remoteUsername, stream: null, panel };
+  peers[remoteSid] = entry;
+
+  peer.on('signal', signal => {
+    socket.emit('signal', {
+      to: remoteSid,
+      signal,
+    });
+  });
+
+  peer.on('stream', stream => {
+    entry.stream = stream;
+    const vid = panel.querySelector('video');
+    vid.srcObject = stream;
+    const conn = panel.querySelector('.connecting-badge');
+    if (conn) conn.remove();
+  });
+
+  peer.on('connect', () => {
+    console.log('Peer connected:', remoteUsername);
+  });
+
+  peer.on('close', () => {
+    removePeer(remoteSid);
+  });
+
+  peer.on('error', err => {
+    console.warn('Peer error:', remoteUsername, err.message);
+    removePeer(remoteSid);
+  });
+
+  return entry;
+}
+
+function removePeer(sid) {
+  const entry = peers[sid];
+  if (!entry) return;
+  try { entry.peer.destroy(); } catch(e) {}
+  if (entry.panel && entry.panel.parentNode) {
+    entry.panel.parentNode.removeChild(entry.panel);
+  }
+  delete peers[sid];
+}
+
+function createRemotePanel(sid, username) {
+  const grid  = document.getElementById('videoGrid');
+  const panel = document.createElement('div');
+  panel.className   = 'video-panel';
+  panel.dataset.peer = sid;
+  panel.innerHTML = `
+    <video autoplay playsinline></video>
+    <div class="vid-label">${escHtml(username || 'Peer')}</div>
+    <div class="connecting-badge">⏳ Connecting…</div>
+  `;
+  grid.appendChild(panel);
+  return panel;
+}
+
+// Re-attach localStream to all existing peers when camera (re)starts
+function refreshPeerStreams() {
+  Object.values(peers).forEach(entry => {
+    try {
+      // Remove old stream tracks if any
+      const senders = entry.peer._pc ? entry.peer._pc.getSenders() : [];
+      senders.forEach(s => {
+        if (s.track) entry.peer._pc.removeTrack(s);
+      });
+      if (localStream) {
+        localStream.getTracks().forEach(t => entry.peer.addTrack(t, localStream));
+      }
+    } catch (e) { /* ignore — peer may already have stream */ }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CAMERA
+// ═══════════════════════════════════════════════════════════════════
+async function startCamera() {
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({
+      video: { width:{ideal:640}, height:{ideal:480}, facingMode:'user' },
+      audio: true,
+    });
+    const vid = document.getElementById('rawVideo');
+    vid.srcObject = localStream;
+    await vid.play();
+    camOn = true;
+    document.getElementById('btnCam').textContent = '⏹️';
+    addSystemMsg('📷 Camera started');
+
+    refreshPeerStreams();
+
+    // Tell server we're ready — get list of existing peers
+    socket.emit('ready_for_peers', { code: ROOM_CODE });
+
+    if (!animFrame) renderLoop();
+    startFpsCounter();
+
+    // Start client-side AI
+    initFaceAPI();
+    initHands();
+
+  } catch (e) {
+    addSystemMsg('Camera error: ' + e.message);
+  }
+}
+
+function stopCamera() {
+  camOn = false;
+  if (localStream) {
+    localStream.getTracks().forEach(t => t.stop());
+    localStream = null;
+  }
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  if (handsTimer) { clearInterval(handsTimer); handsTimer = null; }
+  clearInterval(fpsTimer);
+  document.getElementById('btnCam').textContent = '📷';
+  addSystemMsg('Camera stopped');
+}
+
+function toggleCamera() {
+  camOn ? stopCamera() : startCamera();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FACE-API.JS  — emotion detection on local video
+// ═══════════════════════════════════════════════════════════════════
+async function initFaceAPI() {
+  if (modelsReady) { runFaceLoop(); return; }
+  try {
+    addSystemMsg('Loading emotion models…');
+    await faceapi.nets.tinyFaceDetector.loadFromUri(FACEAPI_MODEL_URL);
+    await faceapi.nets.faceExpressionNet.loadFromUri(FACEAPI_MODEL_URL);
+    modelsReady = true;
+    addSystemMsg('🧠 Emotion model ready');
+    runFaceLoop();
+  } catch (e) {
+    console.warn('face-api load failed', e);
+    addSystemMsg('Emotion model failed to load');
+  }
+}
+
+async function runFaceLoop() {
+  const vid = document.getElementById('rawVideo');
+  const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 });
+
+  async function tick() {
+    if (!camOn || !modelsReady) { lastFaces = []; return; }
+    if (vid.readyState >= 2) {
+      try {
+        const detections = await faceapi
+          .detectAllFaces(vid, opts)
+          .withFaceExpressions();
+
+        lastFaces = detections.map(d => {
+          const box = d.detection.box;
+          const expr = d.expressions || {};
+          let topEmo = 'neutral', topScore = 0;
+          for (const [k, v] of Object.entries(expr)) {
+            if (v > topScore) { topScore = v; topEmo = k; }
+          }
+          // map face-api naming to our palette
+          const norm = topEmo === 'fearful' ? 'fear'
+                     : topEmo === 'surprised' ? 'surprise'
+                     : topEmo === 'disgusted' ? 'disgust'
+                     : topEmo;
+          return {
+            box: [box.x, box.y, box.width, box.height],
+            emotion: norm,
+            score: topScore,
+            emoji: EMO_EMOJI[topEmo] || EMO_EMOJI[norm] || '😐',
+            colorHex: EMO_COLORS[norm] || '#94a3b8',
+            all: expr,
+          };
+        });
+
+        if (lastFaces.length) {
+          const f = lastFaces[0];
+          updateEmotionUI(f, 'my');
+          updateEmoBars(f.all);
+          triggerGlow(f.emotion);
+        }
+      } catch (e) { /* ignore single-frame errors */ }
+    }
+    setTimeout(tick, 120); // ~5 fps detection
+  }
+  tick();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MEDIAPIPE HANDS  — gesture detection on local video
+// ═══════════════════════════════════════════════════════════════════
+function initHands() {
+  if (typeof Hands === 'undefined') { console.warn('Hands not loaded'); return; }
+  if (handsModel) return;
+  try {
+    handsModel = new Hands({
+      locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`,
+    });
+    handsModel.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.75,
+      minTrackingConfidence: 0.75,
+    });
+    handsModel.onResults(onHandResults);
+    runHandsLoop();
+  } catch (e) {
+    console.warn('Hands init error', e);
+  }
+}
+
+async function runHandsLoop() {
+  const vid = document.getElementById('rawVideo');
+
+  async function loop() {
+    if (camOn && handsModel && vid.readyState >= 2) {
+      try {
+        await handsModel.send({ image: vid });
+      } catch (e) {}
+    }
+    requestAnimationFrame(loop);
   }
 
-  // Update info strip
-  if (faces.length) {
-    const f = faces[0];
-    updateEmotionUI(f, data.username === MY_NAME ? 'my' : 'remote');
-    updateEmoBars(f.all || {});
-    triggerGlow(f.emotion);
-  }
-  if (hands.length) {
-    updateGestureUI(hands);
-  } else {
-    document.getElementById('handEmoji').textContent = '✋';
-    document.getElementById('handLabel').textContent = 'No hand';
-    document.getElementById('handSide').textContent  = '—';
-    document.getElementById('detectedGestures').innerHTML =
-      '<div class="no-gesture">No gestures detected</div>';
-  }
-});
+  loop();
+}
 
-// ── Canvas overlay render loop ────────────────────────────────
-// Runs via requestAnimationFrame — draws overlays on top of the live <video>
-// No flicker because we never touch the <video> element at all.
+function onHandResults(results) {
+  const handsArr = [];
+  if (!results.multiHandLandmarks) { lastHands = []; updateGestureUI([]); return; }
+
+  results.multiHandLandmarks.forEach((lms, i) => {
+    const handedness = (results.multiHandedness && results.multiHandedness[i])
+      ? results.multiHandedness[i].label : 'Right';
+    const fingers = fingersUp(lms, handedness === 'Right');
+    const gesture = classifyHand(fingers, lms);
+    const info = HAND_GESTURES[gesture] || { emoji:'✋', label:'Hand', color:'#94a3b8' };
+
+    const xs = lms.map(l => l.x);
+    const ys = lms.map(l => l.y);
+    const x1 = Math.min(...xs), x2 = Math.max(...xs);
+    const y1 = Math.min(...ys), y2 = Math.max(...ys);
+
+    handsArr.push({
+      gesture,
+      label: info.label,
+      emoji: info.emoji,
+      colorHex: info.color,
+      side: handedness,
+      bbox_norm: [x1, y1, x2, y2],
+      landmarks: lms.map(l => ({ x: l.x, y: l.y })),
+    });
+  });
+
+  lastHands = handsArr;
+  if (handsArr.length) {
+  console.log("Detected gesture:", handsArr[0].gesture);
+  }
+  updateGestureUI(handsArr);
+}
+
+function fingersUp(lm, isRight) {
+  const f = [ isRight ? lm[4].x < lm[3].x : lm[4].x > lm[3].x ];
+  [8,12,16,20].forEach(tip => f.push(lm[tip].y < lm[tip-2].y));
+  return f;
+}
+
+function classifyHand(fingers, lm) {
+  const [t,i,m,r,p] = fingers;
+  const n = fingers.filter(Boolean).length;
+
+  const dist = (a,b) => Math.hypot(
+    lm[a].x - lm[b].x,
+    lm[a].y - lm[b].y
+  );
+
+  // 🔥 PRIORITY ORDER (important)
+  if (n === 0) return lm[4].y > lm[0].y ? 'thumbs_down' : 'fist';
+
+  if (t && !i && !m && !r && !p) return 'thumbs_up';
+
+  if (!t && i && !m && !r && !p) return 'pointing';
+
+  if (!t && i && m && !r && !p) return dist(8,12) < 0.035 ? 'crossed' : 'peace';
+
+  if (!t && i && !m && !r && p) return 'rock';
+
+  if (t && !i && !m && !r && p) return 'call_me';
+
+  if (t && i && !m && !r && p) return 'love_sign';
+
+  if (n >= 4) return 'open_hand'; // ✅ KEEP THIS LAST
+
+  return 'open_hand';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CANVAS OVERLAY RENDER LOOP
+// ═══════════════════════════════════════════════════════════════════
 function renderLoop() {
   const vid     = document.getElementById('rawVideo');
   const overlay = document.getElementById('myOverlay');
@@ -520,18 +871,11 @@ function renderLoop() {
   animFrame = requestAnimationFrame(renderLoop);
 }
 
-// Scale box from 320×240 (detection res) to actual overlay size
-function scaleBox(box, ow, oh) {
-  const sx = ow / 320, sy = oh / 240;
-  return [box[0]*sx, box[1]*sy, box[2]*sx, box[3]*sy];
-}
-
 function drawFaceOverlays(ctx, faces, ow, oh) {
   faces.forEach(f => {
-    const [x, y, w, h] = scaleBox(f.box, ow, oh);
+    const [x, y, w, h] = f.box;
     const color = f.colorHex || EMO_COLORS[f.emotion] || '#94a3b8';
 
-    // Glow rect
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth   = 2.5;
@@ -540,20 +884,20 @@ function drawFaceOverlays(ctx, faces, ow, oh) {
     ctx.strokeRect(x, y, w, h);
     ctx.restore();
 
-    // Emoji above face
+    // ONE BIG EMOJI ON FACE
     const emoji = f.emoji || '😐';
-    const eSize = Math.max(24, Math.min(w * 0.55, 60));
-    ctx.font      = `${eSize}px serif`;
-    ctx.textAlign = 'center';
-    ctx.fillText(emoji, x + w/2, y - 6);
+    const size = Math.max(w, h) * 1.3;
+    ctx.font         = `${size}px serif`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(emoji, x + w/2, y + h/2);
 
-    // Label below
+    // Label
     const label = (f.emotion || '').toUpperCase() + ' ' + Math.round((f.score||0)*100) + '%';
     const fs    = Math.max(10, Math.min(w * 0.13, 14));
     ctx.font      = `bold ${fs}px Outfit, sans-serif`;
     ctx.textAlign = 'left';
     const tw      = ctx.measureText(label).width;
-    // pill background
     ctx.save();
     ctx.fillStyle = color + 'cc';
     roundRect(ctx, x, y+h+3, tw+12, fs+10, 4);
@@ -566,43 +910,39 @@ function drawFaceOverlays(ctx, faces, ow, oh) {
 
 function drawHandOverlays(ctx, hands, ow, oh) {
   hands.forEach(h => {
-    const [x1, y1, x2, y2] = h.bbox.map((v,i) => v * (i%2===0 ? ow/320 : oh/240));
+    const [nx1, ny1, nx2, ny2] = h.bbox_norm;
+    const x1 = nx1 * ow, y1 = ny1 * oh, x2 = nx2 * ow, y2 = ny2 * oh;
     const color = h.colorHex || '#94a3b8';
 
-    // Draw skeleton landmarks
     if (h.landmarks && h.landmarks.length === 21) {
-      // Connections (MediaPipe hand topology)
       const CONNECTIONS = [
-        [0,1],[1,2],[2,3],[3,4],           // thumb
-        [0,5],[5,6],[6,7],[7,8],            // index
-        [0,9],[9,10],[10,11],[11,12],       // middle
-        [0,13],[13,14],[14,15],[15,16],     // ring
-        [0,17],[17,18],[18,19],[19,20],     // pinky
-        [5,9],[9,13],[13,17],               // palm
+        [0,1],[1,2],[2,3],[3,4],
+        [0,5],[5,6],[6,7],[7,8],
+        [0,9],[9,10],[10,11],[11,12],
+        [0,13],[13,14],[14,15],[15,16],
+        [0,17],[17,18],[18,19],[19,20],
+        [5,9],[9,13],[13,17],
       ];
       ctx.save();
       ctx.strokeStyle = color;
       ctx.lineWidth   = 1.8;
       ctx.shadowColor = color;
       ctx.shadowBlur  = 5;
-      CONNECTIONS.forEach(([a, b]) => {
-        const la = h.landmarks[a], lb = h.landmarks[b];
+      CONNECTIONS.forEach(([a,b]) => {
         ctx.beginPath();
-        ctx.moveTo(la.x * ow, la.y * oh);
-        ctx.lineTo(lb.x * ow, lb.y * oh);
+        ctx.moveTo(h.landmarks[a].x*ow, h.landmarks[a].y*oh);
+        ctx.lineTo(h.landmarks[b].x*ow, h.landmarks[b].y*oh);
         ctx.stroke();
       });
       ctx.restore();
-      // Dots
       h.landmarks.forEach(lm => {
         ctx.beginPath();
-        ctx.arc(lm.x * ow, lm.y * oh, 3, 0, Math.PI*2);
+        ctx.arc(lm.x*ow, lm.y*oh, 3, 0, Math.PI*2);
         ctx.fillStyle = '#fff';
         ctx.fill();
       });
     }
 
-    // Bounding box
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth   = 2;
@@ -611,11 +951,11 @@ function drawHandOverlays(ctx, hands, ow, oh) {
     ctx.strokeRect(x1, y1, x2-x1, y2-y1);
     ctx.restore();
 
-    // Emoji above hand
     const emoji = h.emoji || '✋';
-    const sz    = Math.max(22, Math.min((x2-x1)*0.6, 50));
-    ctx.font      = `${sz}px serif`;
-    ctx.textAlign = 'center';
+    const sz = Math.max(40, Math.min((x2-x1)*0.9, 80));
+    ctx.font         = `${sz}px serif`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'alphabetic';
     ctx.fillText(emoji, (x1+x2)/2, Math.max(sz+4, y1 - 4));
   });
 }
@@ -623,75 +963,20 @@ function drawHandOverlays(ctx, hands, ow, oh) {
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x+r, y);
-  ctx.lineTo(x+w-r, y);
-  ctx.arcTo(x+w, y, x+w, y+r, r);
-  ctx.lineTo(x+w, y+h-r);
-  ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
-  ctx.lineTo(x+r, y+h);
-  ctx.arcTo(x, y+h, x, y+h-r, r);
-  ctx.lineTo(x, y+r);
-  ctx.arcTo(x, y, x+r, y, r);
+  ctx.lineTo(x+w-r, y); ctx.arcTo(x+w, y, x+w, y+r, r);
+  ctx.lineTo(x+w, y+h-r); ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+  ctx.lineTo(x+r, y+h); ctx.arcTo(x, y+h, x, y+h-r, r);
+  ctx.lineTo(x, y+r); ctx.arcTo(x, y, x+r, y, r);
   ctx.closePath();
 }
 
-// ── Camera ────────────────────────────────────────────────────
-async function startCamera() {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-      audio: false,
-    });
-    const vid = document.getElementById('rawVideo');
-    vid.srcObject = stream;
-    await vid.play();
-    sending = true;
-    document.getElementById('btnCam').textContent = '⏹️';
-    startSendLoop();
-    startFpsCounter();
-    if (!animFrame) renderLoop();
-    addSystemMsg('📷 Camera started');
-  } catch(e) {
-    addSystemMsg('Camera error: ' + e.message);
-  }
-}
-
-function stopCamera() {
-  sending = false;
-  clearInterval(sendTimer);
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
-  clearInterval(fpsTimer);
-  document.getElementById('btnCam').textContent = '📷';
-  addSystemMsg('Camera stopped');
-}
-
-function toggleCamera() {
-  sending ? stopCamera() : startCamera();
-}
-
-// ── Frame sender — 10 FPS, 320×240, quality 0.65 ─────────────
-function startSendLoop() {
-  clearInterval(sendTimer);
-  const vid = document.getElementById('rawVideo');
-  const cap = document.getElementById('captureCanvas');
-
-  sendTimer = setInterval(() => {
-    if (!sending || !filterOn || vid.videoWidth === 0) return;
-    // Downscale to 320×240 before encoding — saves ~75% bandwidth
-    cap.width  = 320;
-    cap.height = 240;
-    cap.getContext('2d').drawImage(vid, 0, 0, 320, 240);
-    const dataURL = cap.toDataURL('image/jpeg', 0.65);
-    socket.emit('video_frame', { image: dataURL });
-  }, 100); // 10 FPS cap
-}
-
-// ── Glow effect on video panel ────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════════════════
 const GLOW_MAP = {
   happy:'glow-happy',sad:'glow-sad',angry:'glow-angry',fear:'glow-fear',
   surprise:'glow-surprise',excited:'glow-excited',
 };
-let currentGlow = '';
 function triggerGlow(emotion) {
   const panel = document.getElementById('myPanel');
   if (currentGlow) panel.classList.remove(currentGlow);
@@ -700,9 +985,7 @@ function triggerGlow(emotion) {
   currentGlow = cls;
 }
 
-// ── Floating emoji burst ──────────────────────────────────────
-let lastFloatEmo = '';
-function spawnFloatEmoji(emoji, x, y) {
+function spawnFloatEmoji(emoji, x) {
   const el = document.createElement('div');
   el.className = 'float-emoji';
   el.textContent = emoji;
@@ -712,34 +995,25 @@ function spawnFloatEmoji(emoji, x, y) {
   setTimeout(() => el.remove(), 2100);
 }
 
-// ── UI updaters ───────────────────────────────────────────────
 function updateEmotionUI(face, who) {
-  const emoji  = face.emoji  || '😐';
-  const label  = face.emotion || 'neutral';
-  const score  = Math.round((face.score || 0) * 100);
-  const color  = EMO_COLORS[label] || '#94a3b8';
+  const emoji = face.emoji || '😐';
+  const label = face.emotion || 'neutral';
+  const score = Math.round((face.score || 0) * 100);
+  const color = EMO_COLORS[label] || '#94a3b8';
 
   if (who === 'my') {
-    document.getElementById('emoEmoji').textContent  = emoji;
-    document.getElementById('emoLabel').textContent  = label;
-    document.getElementById('emoScore').textContent  = score + '% confidence';
-    document.getElementById('emoLabel').style.color  = color;
-
+    document.getElementById('emoEmoji').textContent = emoji;
+    document.getElementById('emoLabel').textContent = label;
+    document.getElementById('emoScore').textContent = score + '% confidence';
+    document.getElementById('emoLabel').style.color = color;
     const badge = document.getElementById('myEmoBadge');
     document.getElementById('myEmoIcon').textContent  = emoji;
     document.getElementById('myEmoLabel').textContent = label;
     badge.classList.add('visible');
-
-    // Floating emoji on strong detections
     if (score > 70 && label !== lastFloatEmo) {
       lastFloatEmo = label;
       spawnFloatEmoji(emoji);
     }
-  } else {
-    const badge = document.getElementById('remoteEmoBadge');
-    document.getElementById('remoteEmoIcon').textContent  = emoji;
-    document.getElementById('remoteEmoLabel').textContent = label;
-    badge.classList.add('visible');
   }
 }
 
@@ -747,10 +1021,13 @@ function updateEmoBars(all) {
   const container = document.getElementById('emoBars');
   const sorted = Object.entries(all).sort((a,b) => b[1]-a[1]);
   container.innerHTML = sorted.map(([emo, val]) => {
-    const pct   = Math.round(val * 100);
-    const color = EMO_COLORS[emo] || '#7c3aed';
+    const pct = Math.round(val * 100);
+    const norm = emo === 'fearful' ? 'fear'
+               : emo === 'surprised' ? 'surprise'
+               : emo === 'disgusted' ? 'disgust' : emo;
+    const color = EMO_COLORS[norm] || '#7c3aed';
     return `<div class="emo-bar-row">
-      <span class="emo-bar-label">${emo}</span>
+      <span class="emo-bar-label">${norm}</span>
       <div class="emo-bar-track">
         <div class="emo-bar-fill" style="width:${pct}%;background:${color}"></div>
       </div>
@@ -760,7 +1037,14 @@ function updateEmoBars(all) {
 }
 
 function updateGestureUI(hands) {
-  if (!hands.length) return;
+  if (!hands.length) {
+    document.getElementById('handEmoji').textContent = '✋';
+    document.getElementById('handLabel').textContent = 'No hand';
+    document.getElementById('handSide').textContent  = '—';
+    document.getElementById('detectedGestures').innerHTML =
+      '<div class="no-gesture">No gestures detected</div>';
+    return;
+  }
   const h = hands[0];
   document.getElementById('handEmoji').textContent = h.emoji || '✋';
   document.getElementById('handLabel').textContent = h.label || h.gesture;
@@ -789,7 +1073,6 @@ function updateMembers() {
     </div>`).join('');
 }
 
-// ── FPS counter ───────────────────────────────────────────────
 function startFpsCounter() {
   clearInterval(fpsTimer);
   fpsTimer = setInterval(() => {
@@ -799,7 +1082,9 @@ function startFpsCounter() {
   }, 1000);
 }
 
-// ── Chat ──────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// CHAT
+// ═══════════════════════════════════════════════════════════════════
 function sendChat() {
   const el  = document.getElementById('chatInput');
   const msg = el.value.trim();
@@ -826,18 +1111,20 @@ function addChatMsg(data) {
 
 function addSystemMsg(text) {
   const container = document.getElementById('chatMessages');
-  const div       = document.createElement('div');
+  const div = document.createElement('div');
   div.style.cssText = 'text-align:center;color:var(--muted);font-size:0.7rem;padding:3px 0;';
   div.textContent = text;
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
 }
 
-// ── Misc ──────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// MISC
+// ═══════════════════════════════════════════════════════════════════
 function toggleFilter() {
   filterOn = !filterOn;
   document.getElementById('btnFilter').className = 'ctrl-btn' + (filterOn ? ' active' : ' off');
-  addSystemMsg('AI filter ' + (filterOn ? 'ON 🧠' : 'OFF'));
+  addSystemMsg('AI overlay ' + (filterOn ? 'ON 🧠' : 'OFF'));
 }
 
 function switchTab(name, el) {
@@ -858,31 +1145,33 @@ function takeSnapshot() {
   const vid = document.getElementById('rawVideo');
   const ov  = document.getElementById('myOverlay');
   if (!vid.videoWidth) return;
-  const c   = document.createElement('canvas');
-  c.width   = vid.videoWidth;
-  c.height  = vid.videoHeight;
+  const c = document.createElement('canvas');
+  c.width  = vid.videoWidth;
+  c.height = vid.videoHeight;
   const ctx = c.getContext('2d');
   ctx.drawImage(vid, 0, 0);
   if (filterOn && ov.width) ctx.drawImage(ov, 0, 0, c.width, c.height);
-  const a      = document.createElement('a');
-  a.download   = `emoticam_${Date.now()}.png`;
-  a.href       = c.toDataURL();
+  const a = document.createElement('a');
+  a.download = `emoticam_${Date.now()}.png`;
+  a.href = c.toDataURL();
   a.click();
   addSystemMsg('Snapshot saved 📸');
 }
 
 function leaveRoom() {
+  Object.keys(peers).forEach(removePeer);
   socket.emit('leave_room_socket', { code: ROOM_CODE });
   stopCamera();
   window.location.href = '/lobby';
 }
 
 function escHtml(s) {
-  return String(s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// ── Gesture reference grid ────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════════════
 document.getElementById('gestureRef').innerHTML =
   GESTURES_REF.map(g =>
     `<div class="g-ref-item">
@@ -891,11 +1180,15 @@ document.getElementById('gestureRef').innerHTML =
      </div>`
   ).join('');
 
-// ── Boot ──────────────────────────────────────────────────────
 window.addEventListener('load', () => {
   updateMembers();
   startCamera();
 });
+
+window.addEventListener('beforeunload', () => {
+  Object.keys(peers).forEach(removePeer);
+});
 </script>
+
 </body>
 </html>
