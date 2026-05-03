@@ -1,18 +1,12 @@
+# ── eventlet must be first ────────────────────────────────────
+# import eventlet
+# eventlet.monkey_patch()
+
 from flask import Flask, render_template, request, redirect, session, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
-import cv2
-import numpy as np
-import base64
-import json
-import os
-import hashlib
-import secrets
-import string
-import logging
+import json, os, hashlib, secrets, string, logging
 from datetime import datetime
-from emotion_engine import EmotionEngine
 
-# ───────────── Logging ─────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("emoticam")
 
@@ -23,12 +17,7 @@ socketio = SocketIO(
     app,
     cors_allowed_origins="*",
     async_mode="threading",
-    max_http_buffer_size=5 * 1024 * 1024,   # 5 MB cap (down from 10)
-    ping_timeout=20,
-    ping_interval=10,
 )
-
-emotion_engine = EmotionEngine()
 
 # ───────────── Users ──────────────────────────────────────────
 USERS_FILE = "users.json"
@@ -48,8 +37,7 @@ def hash_password(p):
 
 # ───────────── Rooms ──────────────────────────────────────────
 active_rooms: dict[str, dict] = {}
-# Map socket_id → room_code for fast lookups (no looping)
-sid_to_room: dict[str, str] = {}
+sid_to_room: dict[str, str]   = {}
 
 def generate_room_code():
     chars = string.ascii_uppercase + string.digits
@@ -62,7 +50,6 @@ def generate_room_code():
 @app.route("/")
 def index():
     return redirect("/lobby" if "username" in session else "/login")
-
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -78,7 +65,6 @@ def login():
         error = "Invalid credentials"
     return render_template("login.html", error=error)
 
-
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     error = None
@@ -88,14 +74,10 @@ def signup():
         c = request.form["confirm"]
         a = request.form.get("avatar", "😊")
         users = load_users()
-        if len(u) < 3:
-            error = "Username too short"
-        elif u in users:
-            error = "User already exists"
-        elif len(p) < 6:
-            error = "Password too short (min 6 chars)"
-        elif p != c:
-            error = "Passwords do not match"
+        if   len(u) < 3:    error = "Username too short"
+        elif u in users:    error = "User already exists"
+        elif len(p) < 6:    error = "Password too short (min 6 chars)"
+        elif p != c:        error = "Passwords do not match"
         else:
             users[u] = {"password": hash_password(p), "avatar": a}
             save_users(users)
@@ -104,12 +86,10 @@ def signup():
             return redirect("/lobby")
     return render_template("signup.html", error=error)
 
-
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/login")
-
 
 @app.route("/lobby")
 def lobby():
@@ -118,7 +98,6 @@ def lobby():
     return render_template("lobby.html",
                            username=session["username"],
                            avatar=session.get("avatar", "😊"))
-
 
 @app.route("/room/<code>")
 def room(code):
@@ -141,11 +120,11 @@ def create_room():
     active_rooms[code] = {
         "host": session["username"],
         "members": [session["username"]],
+        "peers": {},
         "created_at": datetime.now().strftime("%H:%M"),
     }
     log.info(f"Room {code} created by {session['username']}")
     return jsonify({"code": code})
-
 
 @app.route("/api/join_room", methods=["POST"])
 def join_room_api():
@@ -156,129 +135,122 @@ def join_room_api():
         return jsonify({"error": "Room not found"}), 404
     return jsonify({"code": code})
 
-# ───────────── Sockets ────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# SOCKET.IO  — SIGNALING ONLY
+# ═══════════════════════════════════════════════════════════════
 @socketio.on("connect")
 def on_connect():
     log.info(f"Socket connected: {request.sid}")
-
 
 @socketio.on("disconnect")
 def on_disconnect():
     sid = request.sid
     code = sid_to_room.pop(sid, None)
-    if code and code in active_rooms:
-        username = session.get("username", "?")
-        active_rooms[code]["members"] = [
-            m for m in active_rooms[code]["members"] if m != username
-        ]
-        if not active_rooms[code]["members"]:
-            del active_rooms[code]
-            log.info(f"Room {code} deleted (empty)")
-        else:
-            emit("user_left", {
-                "username": username,
-                "members": active_rooms[code]["members"],
-            }, to=code)
+    if not code or code not in active_rooms:
+        return
+    room_data = active_rooms[code]
+    username  = room_data["peers"].pop(sid, None)
 
+    if username:
+        still_connected = username in room_data["peers"].values()
+        if not still_connected:
+            room_data["members"] = [m for m in room_data["members"] if m != username]
+
+    if not room_data["members"]:
+        del active_rooms[code]
+        log.info(f"Room {code} deleted (empty)")
+    else:
+        emit("user_left", {
+            "sid": sid,
+            "username": username or "?",
+            "members": room_data["members"],
+        }, to=code)
 
 @socketio.on("join_room_socket")
-def join_room_socket(data):
+def on_join_room(data):
     code = (data or {}).get("code", "")
     username = session.get("username")
-    if not code or code not in active_rooms or not username:
+    if not code or not username:
+        return
+    if code not in active_rooms:
+        emit("room_closed", {"code": code})
         return
     join_room(code)
-    sid_to_room[request.sid] = code          # O(1) lookup — no loop needed
+    sid_to_room[request.sid] = code
     if username not in active_rooms[code]["members"]:
         active_rooms[code]["members"].append(username)
+
     emit("user_joined", {
+        "sid": request.sid,
         "username": username,
         "members": active_rooms[code]["members"],
     }, to=code)
 
+@socketio.on("ready_for_peers")
+def on_ready_for_peers(data):
+    code = (data or {}).get("code", "")
+    username = session.get("username")
+
+    if not code or code not in active_rooms or not username:
+        return
+
+    room_data = active_rooms[code]
+
+    # Send existing peers FIRST
+    existing = [
+        {"sid": sid, "username": uname}
+        for sid, uname in room_data["peers"].items()
+    ]
+
+    emit("existing_peers", {"peers": existing})
+
+    # THEN add current user
+    room_data["peers"][request.sid] = username
+
+@socketio.on("signal")
+def on_signal(data):
+    target_sid = (data or {}).get("to")
+    signal     = (data or {}).get("signal")
+    if not target_sid or signal is None:
+        return
+    emit("signal", {
+        "from": request.sid,
+        "fromUsername": session.get("username", "?"),
+        "signal": signal,
+    }, to=target_sid)
 
 @socketio.on("leave_room_socket")
-def leave_room_socket(data):
+def on_leave_room(data):
     code = (data or {}).get("code", "")
     username = session.get("username")
     sid_to_room.pop(request.sid, None)
     if code and code in active_rooms:
-        active_rooms[code]["members"] = [
-            m for m in active_rooms[code]["members"] if m != username
-        ]
+        room_data = active_rooms[code]
+        room_data["peers"].pop(request.sid, None)
+        if username:
+            still_connected = username in room_data["peers"].values()
+            if not still_connected:
+                room_data["members"] = [m for m in room_data["members"] if m != username]
         leave_room(code)
         emit("user_left", {
-            "username": username,
-            "members": active_rooms[code].get("members", []),
+            "sid": request.sid,
+            "username": username or "?",
+            "members": room_data.get("members", []),
         }, to=code)
 
-
 @socketio.on("chat_message")
-def chat(data):
+def on_chat(data):
     code = (data or {}).get("room")
     if not code:
         return
     emit("chat_message", {
         "username": session.get("username"),
         "avatar": session.get("avatar", "😊"),
-        "message": (data.get("message") or "")[:500],   # cap message length
+        "message": (data.get("message") or "")[:500],
         "time": datetime.now().strftime("%H:%M"),
     }, to=code)
 
-
-# ───────────── 🔥 VIDEO — metadata-only, zero frame roundtrip ──
-# Architecture:
-#   Browser → sends 320×240 JPEG (10 fps) → server detects emotion/gesture
-#   Server  → sends back ONLY lightweight JSON (face boxes + emotions + gestures)
-#   Browser → draws overlays on <canvas> that sits on top of <video>
-#   Result  → NO flicker, NO base64 roundtrip, ~10× less bandwidth
-# ──────────────────────────────────────────────────────────────
-
-@socketio.on("video_frame")
-def video_frame(data):
-    try:
-        username = session.get("username")
-        if not username:
-            return
-
-        # Fast O(1) room lookup using sid map
-        code = sid_to_room.get(request.sid)
-        if not code:
-            return
-
-        # Decode incoming frame
-        raw = (data.get("image") or "")
-        if "," in raw:
-            raw = raw.split(",", 1)[1]
-        img_bytes = base64.b64decode(raw)
-        np_arr = np.frombuffer(img_bytes, np.uint8)
-        frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        if frame is None:
-            return
-
-        # emotion_engine.process_meta returns (faces, hands) — NO frame drawing
-        # This is our optimized path; falls back to legacy process() if needed
-        if hasattr(emotion_engine, "process_meta"):
-            faces, hands = emotion_engine.process_meta(frame)
-        else:
-            # Legacy: still works, just ignore the annotated frame
-            _, faces, hands = emotion_engine.process(frame)
-
-        # Emit lightweight JSON only — no image data sent back
-        print("FACES DATA:", faces)
-        emit("detection_result", {
-            "username": username,
-            "faces": faces,
-            "hands": hands,
-        }, to=code)
-
-    except Exception as e:
-        log.warning(f"video_frame error: {e}")
-
-
 # ───────────── Run ─────────────────────────────────────────────
-import os
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    socketio.run(app, host="0.0.0.0", port=port, allow_unsafe_werkzeug=True)
+    socketio.run(app, host="0.0.0.0", port=port)
