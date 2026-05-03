@@ -197,10 +197,10 @@ __pycache__/
 
 ## 👤 Author
 
-**Kanishka Goyal**
-**Aryan Tiwari**
-**Shrishti Tiwari**
-**Kavya Lamba**
+**Kanishka Goyal**,
+**Aryan Tiwari**,
+**Shrishti Tiwari**,
+**Kavya Lamba**.
 
 ---
 
