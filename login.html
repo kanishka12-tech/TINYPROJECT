@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>EmotiCam — Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;900&display=swap" rel="stylesheet"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#070b14;--surface:#0d1424;--card:#111827;
+  --border:#1e2d45;--accent:#00d4ff;--accent2:#ff3cac;
+  --green:#00ff88;--text:#e2e8f0;--muted:#64748b;
+}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:'Outfit',sans-serif;min-height:100vh;
+  display:flex;align-items:center;justify-content:center;
+  overflow:hidden;
+}
+/* animated bg */
+.bg-fx{position:fixed;inset:0;z-index:0;overflow:hidden;}
+.orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:0.25;animation:drift 8s ease-in-out infinite;}
+.orb1{width:400px;height:400px;background:#00d4ff;top:-100px;left:-100px;animation-delay:0s;}
+.orb2{width:350px;height:350px;background:#ff3cac;bottom:-100px;right:-100px;animation-delay:3s;}
+.orb3{width:250px;height:250px;background:#7c3aed;top:50%;left:50%;transform:translate(-50%,-50%);animation-delay:1.5s;}
+@keyframes drift{0%,100%{transform:translate(0,0);}50%{transform:translate(30px,-20px);}}
+
+.card{
+  position:relative;z-index:1;
+  background:rgba(13,20,36,0.85);
+  border:1px solid var(--border);
+  border-radius:24px;
+  padding:48px 44px;
+  width:100%;max-width:440px;
+  backdrop-filter:blur(20px);
+  box-shadow:0 0 60px rgba(0,212,255,0.08);
+}
+.logo{text-align:center;margin-bottom:32px;}
+.logo-icon{font-size:3rem;display:block;margin-bottom:8px;}
+.logo h1{font-size:2rem;font-weight:900;letter-spacing:-1px;}
+.logo h1 span{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.logo p{color:var(--muted);font-size:0.88rem;margin-top:4px;}
+
+.form-group{margin-bottom:18px;}
+label{display:block;font-size:0.78rem;font-weight:600;
+      color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}
+input{
+  width:100%;padding:13px 16px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid var(--border);
+  border-radius:12px;
+  color:var(--text);font-family:'Outfit',sans-serif;font-size:0.95rem;
+  outline:none;transition:all 0.2s;
+}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,212,255,0.12);}
+input::placeholder{color:var(--muted);}
+
+.btn-main{
+  width:100%;padding:14px;
+  background:linear-gradient(135deg,var(--accent),#0099cc);
+  border:none;border-radius:12px;
+  color:#000;font-family:'Outfit',sans-serif;
+  font-size:1rem;font-weight:700;
+  cursor:pointer;transition:all 0.2s;margin-top:8px;
+  letter-spacing:0.5px;
+}
+.btn-main:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(0,212,255,0.35);}
+
+.error{
+  background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);
+  border-radius:10px;padding:12px 14px;
+  color:#fca5a5;font-size:0.85rem;margin-bottom:18px;
+  display:flex;align-items:center;gap:8px;
+}
+
+.divider{
+  text-align:center;color:var(--muted);font-size:0.8rem;
+  margin:20px 0;position:relative;
+}
+.divider::before,.divider::after{
+  content:'';position:absolute;top:50%;width:40%;height:1px;
+  background:var(--border);
+}
+.divider::before{left:0;} .divider::after{right:0;}
+
+.link-btn{
+  display:block;text-align:center;
+  padding:13px;border:1px solid var(--border);
+  border-radius:12px;color:var(--text);
+  text-decoration:none;font-size:0.9rem;font-weight:600;
+  transition:all 0.2s;
+}
+.link-btn:hover{border-color:var(--accent2);color:var(--accent2);}
+
+.demo-hint{
+  margin-top:20px;text-align:center;
+  color:var(--muted);font-size:0.75rem;
+}
+</style>
+</head>
+<body>
+<div class="bg-fx">
+  <div class="orb orb1"></div>
+  <div class="orb orb2"></div>
+  <div class="orb orb3"></div>
+</div>
+
+<div class="card">
+  <div class="logo">
+    <span class="logo-icon">🎭</span>
+    <h1>Emoti<span>Cam</span></h1>
+    <p>Real-time emotion video calls</p>
+  </div>
+
+  {% if error %}
+  <div class="error">⚠️ {{ error }}</div>
+  {% endif %}
+
+  <form method="POST">
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" name="username" placeholder="Enter your username" required autocomplete="off"/>
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" name="password" placeholder="Enter your password" required/>
+    </div>
+    <button type="submit" class="btn-main">Sign In →</button>
+  </form>
+
+  <div class="divider">or</div>
+  <a href="/signup" class="link-btn">✨ Create new account</a>
+  <p class="demo-hint">New here? Sign up to create rooms and join calls.</p>
+</div>
+</body>
+</html>
